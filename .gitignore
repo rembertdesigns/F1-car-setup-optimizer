@@ -1,0 +1,28 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+
+# Data and model artifacts
+*.csv
+*.pkl
+*.joblib
+
+# Large images and plots
+*.png
+*.jpg
+
+# Streamlit config
+.streamlit/
+
+# Virtual environments
+venv/
+env/
+
+# VSCode & macOS
+.vscode/
+.DS_Store
+*.csv
+*.pkl
+*.png
+__pycache__/
+venv/
