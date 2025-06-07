@@ -4,7 +4,7 @@ from skopt import gp_minimize
 from skopt.space import Real
 from skopt.utils import use_named_args
 
-# Load trained model
+# Load trained ML model
 model = joblib.load("models/lap_time_predictor.pkl")
 
 # Define search space
@@ -18,28 +18,52 @@ space = [
     Real(0.8, 1.2, name="grip_level"),
 ]
 
-@use_named_args(space)
-def objective(**params):
-    X = np.array([[params[key] for key in params]])
-    pred_time = model.predict(X)[0]
-    return pred_time  # We want to minimize lap time
+def optimize_setup(weights=None):
+    if weights is None:
+        weights = {
+            "lap_time": 1.0,
+            "tire_preservation": 0.0,
+            "handling_balance": 0.0
+        }
 
-def optimize_setup():
-    print("🔍 Running Bayesian Optimization...")
+    @use_named_args(space)
+    def composite_objective(**params):
+        X = np.array([[params[k] for k in params]])
+        predicted_lap_time = model.predict(X)[0]
+
+        # Tire wear penalty (lower is better)
+        tire_penalty = (
+            0.2 * (params["suspension_stiffness"] / 10) +
+            0.2 * (4 / params["ride_height"]) +  # encourage slightly higher ride height
+            0.1 * abs(params["brake_bias"] - 55) / 15
+        )
+
+        # Handling imbalance penalty
+        imbalance = abs(params["rear_wing_angle"] - params["front_wing_angle"])
+
+        # Composite score to minimize
+        score = (
+            weights["lap_time"] * predicted_lap_time +
+            weights["tire_preservation"] * tire_penalty +
+            weights["handling_balance"] * imbalance
+        )
+
+        return score
+
+    print("🔍 Running tradeoff optimization...")
     result = gp_minimize(
-        func=objective,
+        func=composite_objective,
         dimensions=space,
         n_calls=40,
         random_state=42
     )
 
     best_params = dict(zip([dim.name for dim in space], result.x))
-    print("✅ Best Setup Found:")
+    predicted_lap = model.predict(np.array([list(best_params.values())]))[0]
+
+    print("✅ Optimized tradeoff result:")
     for k, v in best_params.items():
         print(f"{k}: {v:.2f}")
-    print(f"Predicted Lap Time: {result.fun:.2f} sec")
+    print(f"Predicted Lap Time: {predicted_lap:.2f} sec")
 
-    return best_params, result.fun
-
-if __name__ == "__main__":
-    optimize_setup()
+    return best_params, predicted_lap
