@@ -1,47 +1,86 @@
 import numpy as np
 import pandas as pd
 
-def generate_synthetic_data(n_samples=1000, random_seed=42):
+def generate_synthetic_data(n_samples=2000, random_seed=42):
     np.random.seed(random_seed)
     data = []
 
-    for _ in range(n_samples):
-        # Random setup values
-        front_wing = np.random.uniform(0, 10)
-        rear_wing = np.random.uniform(0, 15)
-        ride_height = np.random.uniform(3, 7)
-        suspension = np.random.uniform(1, 10)
-        brake_bias = np.random.uniform(50, 70)
+    tire_types = ['soft', 'medium', 'hard', 'intermediate', 'wet']
 
-        # Random track conditions
+    for _ in range(n_samples):
+        # Setup parameters
+        front_wing = np.random.randint(0, 51)
+        rear_wing = np.random.randint(0, 51)
+        ride_height = np.random.randint(30, 51)
+        suspension = np.random.randint(1, 12)
+        brake_bias = np.random.randint(50, 61)
+
+        # Track/environment conditions
         track_temp = np.random.uniform(15, 45)
         grip_level = np.random.uniform(0.8, 1.2)
+        rain = np.random.choice([0, 1], p=[0.85, 0.15])
+        tire = np.random.choice(tire_types)
 
-        # Simulated lap time
+        # Race context (constant or lightly randomized)
+        lap = np.random.randint(1, 5)
+        fuel_weight = np.random.uniform(8, 12)
+        traffic = np.random.uniform(0.0, 0.5)
+        safety_car = 0
+        vsc = 0
+
+        # Simulate lap time
         base_lap = 90
         lap_time = base_lap
-        lap_time += 0.1 * abs(6 - front_wing)
-        lap_time += 0.15 * abs(10 - rear_wing)
-        lap_time += 0.2 * abs(5 - ride_height)
-        lap_time += 0.1 * abs(5 - suspension)
-        lap_time += 0.05 * abs(60 - brake_bias)
-        lap_time += 0.1 * abs(30 - track_temp)  # ideal temp ~30C
-        lap_time -= 5 * (grip_level - 1)  # reward extra grip
-        lap_time += np.random.normal(0, 0.3)  # noise
+        lap_time += 0.1 * abs(25 - front_wing)
+        lap_time += 0.12 * abs(25 - rear_wing)
+        lap_time += 0.2 * abs(40 - ride_height)
+        lap_time += 0.15 * abs(6 - suspension)
+        lap_time += 0.1 * abs(55 - brake_bias)
+        lap_time += 0.1 * abs(30 - track_temp)
+        lap_time -= 5 * (grip_level - 1.0)
+        lap_time += 0.3 * rain
+        lap_time += 0.4 * traffic
+        lap_time += 0.2 * fuel_weight
+        lap_time += np.random.normal(0, 0.25)
 
-        data.append([
-            front_wing, rear_wing, ride_height, suspension, brake_bias,
-            track_temp, grip_level, lap_time
-        ])
+        # Tire compound impact
+        tire_map = {
+            'soft': -0.3,
+            'medium': 0.0,
+            'hard': +0.3,
+            'intermediate': +0.6,
+            'wet': +1.2
+        }
+        lap_time += tire_map[tire]
 
-    df = pd.DataFrame(data, columns=[
-        "front_wing_angle", "rear_wing_angle", "ride_height",
-        "suspension_stiffness", "brake_bias",
-        "track_temperature", "grip_level", "lap_time"
-    ])
+        row = {
+            'front_wing_angle': front_wing,
+            'rear_wing_angle': rear_wing,
+            'ride_height': ride_height,
+            'suspension_stiffness': suspension,
+            'brake_bias': brake_bias,
+            'track_temperature': track_temp,
+            'grip_level': grip_level,
+            'rain': rain,
+            'lap': lap,
+            'fuel_weight': fuel_weight,
+            'traffic': traffic,
+            'safety_car_active': safety_car,
+            'vsc_active': vsc,
+            'tire_type': tire,
+            'lap_time': lap_time
+        }
+
+        data.append(row)
+
+    df = pd.DataFrame(data)
+
+    # One-hot encode tire type
+    df = pd.get_dummies(df, columns=["tire_type"])
+
     return df
 
 if __name__ == "__main__":
     df = generate_synthetic_data()
-    df.to_csv("data/synthetic_car_setup.csv", index=False)
-    print("✅ Synthetic data saved to data/synthetic_car_setup.csv")
+    df.to_csv("data/synthetic_car_setup_v2.csv", index=False)
+    print("✅ New synthetic dataset saved to data/synthetic_car_setup_v2.csv")

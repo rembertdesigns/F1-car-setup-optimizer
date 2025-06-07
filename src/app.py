@@ -21,20 +21,17 @@ TRACKS_DATA = {
     "Monza": {
         "description": "The 'Temple of Speed'. Requires low downforce for its long straights, but needs stability for chicanes.",
         "image": "https://www.formula1.com/content/dam/fom-website/2018-redesign-assets/Circuit%20maps%2016x9/Monza_Circuit.png.transform/9col-retina/image.png",
-        "track_temperature": 40.0,
-        "grip_level": 0.9
+        "base_lap_time": 80.0
     },
     "Monaco": {
         "description": "A tight, twisty street circuit where maximum downforce, agility, and stability are crucial. Top speed is irrelevant.",
         "image": "https://www.formula1.com/content/dam/fom-website/2018-redesign-assets/Circuit%20maps%2016x9/Monoco_Circuit.png.transform/9col-retina/image.png",
-        "track_temperature": 28.0,
-        "grip_level": 1.1
+        "base_lap_time": 71.0
     },
     "Spa-Francorchamps": {
         "description": "A classic track with a mix of long straights and fast, flowing corners. Requires a balanced setup.",
         "image": "https://www.formula1.com/content/dam/fom-website/2018-redesign-assets/Circuit%20maps%2016x9/Spa-Francorchamps_Circuit.png.transform/9col-retina/image.png",
-        "track_temperature": 22.0,
-        "grip_level": 1.0
+        "base_lap_time": 105.0
     }
 }
 
@@ -43,18 +40,16 @@ TRACKS_DATA = {
 with st.sidebar:
     st.header("⚙️ Controls")
     
-    st.subheader("📍 Select Track & Conditions")
+    st.subheader("📍 Select Track")
     selected_track = st.selectbox("Choose a track for setup optimization", list(TRACKS_DATA.keys()))
     
     track_info = TRACKS_DATA[selected_track]
-    st.image(track_info["image"])
+    st.image(track_info["image"], use_container_width=True)
     st.info(track_info["description"])
 
-    # Define track conditions based on selection, allowing user override
+    # Define track conditions based on selection. The optimizer will use these.
     track_conditions = {
-        "track_temperature": st.slider("Track Temperature (°C)", 15.0, 50.0, track_info.get("track_temperature", 30.0)),
-        "grip_level": st.slider("Grip Level", 0.8, 1.2, track_info.get("grip_level", 1.0), 0.01),
-        "tire_compound": st.selectbox("Target Tire Compound", ["soft", "medium", "hard"], index=0)
+        "base_lap_time": track_info.get("base_lap_time", 90.0)
     }
 
     st.divider()
@@ -75,7 +70,7 @@ col1, col2 = st.columns([0.6, 0.4], gap="large")
 
 with col1:
     st.subheader("🔧 Car Setup Parameters")
-    st.markdown("Adjust the sliders below to create a custom setup, or use the optimizer to find the best one based on your weights.")
+    st.markdown("Adjust the sliders below to create a custom setup, or run the optimizer to find the best one based on your weights.")
     
     if 'setup' not in st.session_state:
         st.session_state.setup = {
@@ -101,7 +96,7 @@ with col1:
             "handling_balance": handling_weight
         }
         with st.spinner("Running Bayesian Optimization... this may take a moment."):
-            # --- FIX: Pass both 'weights' and 'track_conditions' to the optimizer ---
+            # CORRECTED: Pass both 'weights' and 'track_conditions' to the optimizer
             best_params, predicted_lap = optimize_setup(weights, track_conditions)
             
         st.success(f"🏁 Optimizer Found Optimal Lap Time: **{predicted_lap:.3f} sec**")
@@ -109,7 +104,7 @@ with col1:
         # Update the session state and sliders with the new best params
         for key in st.session_state.setup.keys():
             if key in best_params:
-                st.session_state.setup[key] = best_params[key]
+                st.session_state.setup[key] = int(best_params[key])
         st.rerun()
 
 with col2:
