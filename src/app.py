@@ -1,85 +1,42 @@
 import streamlit as st
 import plotly.graph_objects as go
+import plotly.express as px
 import pandas as pd
 import numpy as np
 import time
 import os
 import json
+import shap
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 from optimizer import optimize_setup, run_pareto_optimization
 from sklearn.ensemble import RandomForestRegressor
-import shap
+from physics_model import compute_downforce, compute_drag, compute_brake_distance, simulate_straight, simulate_corner, get_car_params, track
 
 st.set_page_config(page_title="F1 Car Setup Optimizer", layout="wide")
-# Load historic setup data if available
+
+# --- 🏎️ Title & Intro ---
 historic_data = pd.read_csv("data/historic_setups.csv") if os.path.exists("data/historic_setups.csv") else pd.DataFrame()
-
-# --- Train Recommender ---
-def train_recommender(data):
-    if data.empty:
-        return None, None
-    features = ["front_wing_angle", "rear_wing_angle", "ride_height", "suspension_stiffness", "brake_bias"]
-    X = data[features]
-    y = data["lap_time"]
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X, y)
-    explainer = shap.Explainer(model, X)
-    return model, explainer
-
-recommender_model, shap_explainer = train_recommender(historic_data)
-
-# --- Helper: Recommend Setup ---
-def recommend_setup(track_conditions):
-    if recommender_model is None:
-        return None
-    track_temp = track_conditions["track_temperature"]
-    grip = track_conditions["grip_level"]
-    target_row = historic_data.copy()
-    target_row["score"] = np.abs(historic_data["track_temperature"] - track_temp) + np.abs(historic_data["grip_level"] - grip)
-    closest = target_row.sort_values("score").iloc[0]
-    return {
-        "front_wing_angle": int(closest["front_wing_angle"]),
-        "rear_wing_angle": int(closest["rear_wing_angle"]),
-        "ride_height": int(closest["ride_height"]),
-        "suspension_stiffness": int(closest["suspension_stiffness"]),
-        "brake_bias": int(closest["brake_bias"])
-    }
-
-# --- Explainable Setup Insights (SHAP) ---
-def explain_current_setup(current_setup):
-    if shap_explainer is None:
-        st.warning("Explainability model not available.")
-        return
-    sample = pd.DataFrame([current_setup])
-    shap_values = shap_explainer(sample)
-    st.header("🧠 Explainable Setup Insights")
-    st.subheader("🔍 Why this setup works")
-    st.caption("Feature importance visualized using SHAP values.")
-    shap.plots.waterfall(shap_values[0], show=False)
-    st.pyplot(bbox_inches='tight', dpi=300, pad_inches=0.1)
 
 st.title("🏎️ F1 Car Setup Workbench")
 st.markdown("Interactively create and optimize a car setup for different performance tradeoffs.")
-st.divider()
+main_cols = st.columns([0.25, 0.4, 0.35], gap="large")
 
-# --- Interactive Track Walkthrough + Setup Notes ---
-st.header("🔹 Track Walkthrough & Sector Notes")
-st.markdown("Click a sector and leave a setup-related comment.")
+# --- ⚙️ Controls ---
+# Anchor for return-to-top functionality
+st.markdown('<a name="top"></a>', unsafe_allow_html=True)
 
-track_sectors = ["Sector 1", "Sector 2", "Sector 3"]
-selected_sector = st.selectbox("Choose Sector", track_sectors)
-comment_key = f"comment_{selected_sector.replace(' ', '_')}"
-if comment_key not in st.session_state:
-    st.session_state[comment_key] = ""
-st.session_state[comment_key] = st.text_area(f"Comment for {selected_sector}", value=st.session_state[comment_key], height=100)
+with st.expander("⚙️ Track & Conditions", expanded=True):
+    st.header("⚙️ Controls")
 
-# Display all comments
-with st.expander("📃 View All Sector Notes"):
-    for sector in track_sectors:
-        key = f"comment_{sector.replace(' ', '_')}"
-        if st.session_state.get(key):
-            st.markdown(f"**{sector}**: {st.session_state[key]}")
+if 'setup' not in st.session_state:
+    st.session_state.setup = {"front_wing_angle": 25, "rear_wing_angle": 25, "ride_height": 35, "suspension_stiffness": 5, "brake_bias": 54}
+if 'setup_A' not in st.session_state:
+    st.session_state.setup_A = None
+if 'setup_B' not in st.session_state:
+    st.session_state.setup_B = None
+if 'pareto_front' not in st.session_state:
+    st.session_state.pareto_front = None
 
 TRACKS_DATA = {
     "Monza": {
@@ -184,112 +141,25 @@ TRACKS_DATA = {
     }
 }
 
-# --- Helper Functions ---
-def get_balance_scores(setup_dict):
-    """Calculates performance scores based on setup parameters for the radar chart."""
-    top_speed = 10 - ((setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) / 100) * 10
-    cornering = ((setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) / 100) * 8 + (setup_dict["suspension_stiffness"] / 11) * 2
-    stability = ((50 - setup_dict["ride_height"]) / 20) * 5 + (setup_dict["brake_bias"] / 60) * 5
-    tire_life = 10 - ((setup_dict["suspension_stiffness"] / 11) * 5 + top_speed * 0.1)
-    return [np.clip(s, 0, 10) for s in [top_speed, cornering, stability, tire_life]]
+selected_track = st.selectbox("Select Track", list(TRACKS_DATA.keys()))
+track_info = TRACKS_DATA[selected_track]
 
-def get_predicted_lap_time(setup_dict, track_conditions):
-    """Calculates a predicted lap time based on a simple formula for display."""
-    base_lap = track_conditions.get('base_lap_time', 90.0)
-    aero_penalty = (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.04
-    cornering_bonus = (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.02
-    ride_height_effect = (setup_dict["ride_height"] - 30) * 0.05
-    return base_lap + aero_penalty - cornering_bonus + ride_height_effect
+st.image(track_info["image"], use_container_width=True)
+st.info(track_info["description"])
 
-def generate_telemetry_trace(setup_dict):
-    """Generates a mock speed vs. distance trace for a generic lap."""
-    total_distance = 5000; distance = np.linspace(0, total_distance, 500)
-    straight1, corner1, straight2, corner2, straight3 = 1000, 1500, 3000, 3500, total_distance
-    max_s = 350 - (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.5
-    min_s = 80 + (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.3
-    fast_s = 200 + (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.4
-    speed = np.zeros_like(distance)
-    speed[distance <= straight1] = max_s; speed[(distance > straight1) & (distance <= corner1)] = min_s
-    speed[(distance > corner1) & (distance <= straight2)] = max_s; speed[(distance > straight2) & (distance <= corner2)] = fast_s
-    speed[distance > corner2] = max_s
-    speed = np.convolve(speed, np.ones(15)/15, mode='same')
-    return distance, speed
+track_conditions = {
+    "base_lap_time": track_info.get("base_lap_time", 90.0),
+    "track_temperature": st.slider("Track Temperature (°C)", 15.0, 50.0, track_info.get("track_temperature", 30.0)),
+    "grip_level": st.slider("Grip Level", 0.8, 1.2, track_info.get("grip_level", 1.0), 0.01),
+    "tire_compound": st.selectbox("Target Tire Compound", ["soft", "medium", "hard"], index=0)
+}
 
-# --- NEW: PDF Generation for a single setup ---
-def generate_setup_pdf(setup_dict, track_name, lap_time):
-    """Creates a PDF summary of a car setup."""
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "F1 Car Setup Report", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
-    pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 10, f"Track: {track_name}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
-    pdf.ln(10)
-
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 10, "Predicted Lap Time:", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", "", 20)
-    pdf.cell(0, 10, f"{lap_time:.3f}s", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(5)
-
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 10, "Setup Parameters:", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", "", 11)
-    for key, val in setup_dict.items():
-        pdf.cell(0, 7, f"  -  {key.replace('_', ' ').title()}: {val}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    
-    return bytes(pdf.output())
-
-# --- Initialize Session State ---
-if 'setup' not in st.session_state:
-    st.session_state.setup = {"front_wing_angle": 25, "rear_wing_angle": 25, "ride_height": 35, "suspension_stiffness": 5, "brake_bias": 54}
-if 'setup_A' not in st.session_state:
-    st.session_state.setup_A = None
-if 'setup_B' not in st.session_state:
-    st.session_state.setup_B = None
-if 'pareto_front' not in st.session_state:
-    st.session_state.pareto_front = None
-
-# --- NEW: Handle Shareable Links (URL Query Params) ---
-# This runs once at the beginning of the script execution
-if not st.session_state.get('url_params_loaded', False):
-    query_params = st.query_params
-    try:
-        if 'fwa' in query_params: st.session_state.setup['front_wing_angle'] = int(query_params['fwa'][0])
-        if 'rwa' in query_params: st.session_state.setup['rear_wing_angle'] = int(query_params['rwa'][0])
-        if 'rh' in query_params: st.session_state.setup['ride_height'] = int(query_params['rh'][0])
-        if 'ss' in query_params: st.session_state.setup['suspension_stiffness'] = int(query_params['ss'][0])
-        if 'bb' in query_params: st.session_state.setup['brake_bias'] = int(query_params['bb'][0])
-    except (ValueError, IndexError):
-        st.toast("⚠️ Could not parse setup from URL. Using default.", icon="⚠️")
-    st.session_state.url_params_loaded = True
-
-# --- App Layout ---
-main_cols = st.columns([0.25, 0.4, 0.35], gap="large")
-
-# --- COLUMN 1: CONTROLS (SIDEBAR-LIKE) ---
-with main_cols[0]:
-    st.header("⚙️ Controls")
-    st.subheader("📍 Select Track & Conditions")
-    selected_track = st.selectbox("Track", list(TRACKS_DATA.keys()), label_visibility="collapsed")
-    track_info = TRACKS_DATA[selected_track]
-    st.image(track_info["image"], use_container_width=True)
-    st.info(track_info["description"])
-    
-    # Define track conditions based on selection. The optimizer will use these.
-    track_conditions = {
-        "base_lap_time": track_info.get("base_lap_time", 90.0),
-        "track_temperature": st.slider("Track Temperature (°C)", 15.0, 50.0, track_info.get("track_temperature", 30.0)),
-        "grip_level": st.slider("Grip Level", 0.8, 1.2, track_info.get("grip_level", 1.0), 0.01),
-        "tire_compound": st.selectbox("Target Tire Compound", ["soft", "medium", "hard"], index=0)
-    }
-
-    st.divider()
+# --- ⚖️ Optimization Weights ---
+with st.expander("⚖️ Optimization Weights", expanded=True):
     st.header("⚖️ Optimization Weights")
-    st.caption("Define what matters most for the single-setup optimizer.")
-    lap_time_weight = st.slider("🏁 Lap Time Focus", 0.0, 1.0, 0.6, 0.05)
-    tire_preservation_weight = st.slider("🛞 Tire Preservation", 0.0, 1.0, 0.2, 0.05)
-    handling_weight = st.slider("↔️ Handling Balance", 0.0, 1.0, 0.2, 0.05)
+    lap_time_weight = st.slider("🏁 Lap Time Focus", 0.0, 1.0, 0.6, 0.05, key="weight_lap")
+    tire_preservation_weight = st.slider("🛞 Tire Preservation", 0.0, 1.0, 0.2, 0.05, key="weight_tire")
+    handling_weight = st.slider("↔️ Handling Balance", 0.0, 1.0, 0.2, 0.05, key="weight_handling")
     total_weight = lap_time_weight + tire_preservation_weight + handling_weight
     if not np.isclose(total_weight, 1.0):
         st.error(f"Weights must sum to 1.0 (is {total_weight:.2f})")
@@ -344,187 +214,485 @@ if st.session_state.get("setup_A"):
     st.caption("Δ from Setup A:")
     st.json(delta)
 
+def get_balance_scores(setup_dict):
+    top_speed = 10 - ((setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) / 100) * 10
+    cornering = ((setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) / 100) * 8 + (setup_dict["suspension_stiffness"] / 11) * 2
+    stability = ((50 - setup_dict["ride_height"]) / 20) * 5 + (setup_dict["brake_bias"] / 60) * 5
+    tire_life = 10 - ((setup_dict["suspension_stiffness"] / 11) * 5 + top_speed * 0.1)
+    return [np.clip(s, 0, 10) for s in [top_speed, cornering, stability, tire_life]]
 
-# --- Sensitivity Analysis Section ---
+# --- 📊 Live Analysis ---
 st.divider()
-st.header("🔍 Setup Sensitivity Analysis")
-if 'last_optimal_setup' not in st.session_state:
-    st.session_state.last_optimal_setup = None
+st.header("📊 Live Analysis")
 
-if st.session_state.setup:
-    st.session_state.last_optimal_setup = st.session_state.setup.copy()
+scores = get_balance_scores(st.session_state.setup)
+categories = ['Top Speed', 'Cornering Grip', 'Stability', 'Tire Life']
+fig = go.Figure(data=go.Scatterpolar(r=scores, theta=categories, fill='toself', name='Current Setup', line_color='#00D2BE'))
+fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), showlegend=False, height=300)
+st.plotly_chart(fig, use_container_width=True)
 
-if st.session_state.last_optimal_setup:
-    st.subheader("Analyze Setup Parameter Sensitivity")
-    param_to_test = st.selectbox("Choose parameter to analyze:", [
-        "front_wing_angle", "rear_wing_angle", "ride_height", "suspension_stiffness", "brake_bias"])
-    range_val = st.slider("Change range (+/- value):", 1, 10, 5)
-    if st.button("Run Sensitivity Analysis", use_container_width=True):
-        param_range = range(st.session_state.last_optimal_setup[param_to_test] - range_val,
-                            st.session_state.last_optimal_setup[param_to_test] + range_val + 1)
-        lap_times = []
-        x_vals = []
+def generate_telemetry_trace(setup_dict):
+    total_distance = 5000
+    distance = np.linspace(0, total_distance, 500)
+    straight1, corner1, straight2, corner2, straight3 = 1000, 1500, 3000, 3500, total_distance
+    max_s = 350 - (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.5
+    min_s = 80 + (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.3
+    fast_s = 200 + (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.4
+    speed = np.zeros_like(distance)
+    speed[distance <= straight1] = max_s
+    speed[(distance > straight1) & (distance <= corner1)] = min_s
+    speed[(distance > corner1) & (distance <= straight2)] = max_s
+    speed[(distance > straight2) & (distance <= corner2)] = fast_s
+    speed[distance > corner2] = max_s
+    speed = np.convolve(speed, np.ones(15)/15, mode='same')
+    return distance, speed
 
-        for val in param_range:
-            test_setup = st.session_state.last_optimal_setup.copy()
-            test_setup[param_to_test] = val
-            lap_time = get_predicted_lap_time(test_setup, track_conditions)
-            x_vals.append(val)
-            lap_times.append(lap_time)
+distance, speed = generate_telemetry_trace(st.session_state.setup)
+fig_telemetry = go.Figure(data=go.Scatter(x=distance, y=speed, mode='lines', name='Speed', line=dict(color='#FF8700', width=4)))
+fig_telemetry.update_layout(title="Simulated Speed Trace", xaxis_title="Distance (m)", yaxis_title="Speed (km/h)", height=250)
+st.plotly_chart(fig_telemetry, use_container_width=True)
 
-        fig_sensitivity = go.Figure()
-        fig_sensitivity.add_trace(go.Scatter(x=x_vals, y=lap_times, mode='lines+markers', name='Lap Time vs. Value'))
-        fig_sensitivity.update_layout(
-            title=f"Sensitivity of Lap Time to {param_to_test.replace('_',' ').title()}",
-            xaxis_title=f"{param_to_test.replace('_',' ').title()}",
-            yaxis_title="Predicted Lap Time (s)",
-            height=350
-        )
-        st.plotly_chart(fig_sensitivity, use_container_width=True)
-else:
-    st.info("Run an optimization first to analyze sensitivity around an optimal setup.")
-
-# --- COLUMN 3: LIVE ANALYSIS ---
-with main_cols[2]:
-    st.header("📊 Live Analysis")
-    st.subheader("Setup Balance Profile")
-    scores = get_balance_scores(st.session_state.setup)
-    categories = ['Top Speed', 'Cornering Grip', 'Stability', 'Tire Life']
-    fig = go.Figure(data=go.Scatterpolar(r=scores, theta=categories, fill='toself', name='Current Setup', line_color='#00D2BE'))
-    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), showlegend=False, height=300, margin=dict(l=40, r=40, t=40, b=40))
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("🛰️ Live Telemetry Trace")
-    distance, speed = generate_telemetry_trace(st.session_state.setup)
-    fig_telemetry = go.Figure(data=go.Scatter(x=distance, y=speed, mode='lines', name='Speed', line=dict(color='#FF8700', width=4)))
-    fig_telemetry.update_layout(title="Simulated Speed Trace", xaxis_title="Distance (m)", yaxis_title="Speed (km/h)", height=250, margin=dict(l=20,r=20,t=40,b=20))
-    st.plotly_chart(fig_telemetry, use_container_width=True)
-
-# --- Pareto Front Optimization & Comparison Section ---
+# --- NEW: Physics Explorer Section ---
 st.divider()
-st.header("📈 Pareto Analysis: Lap Time vs. Tire Preservation")
-st.markdown("Find a range of optimal setups that represent the best possible trade-offs between pure speed and tire life. Click on any point to see its setup parameters.")
+st.header("📐 Physics Explorer")
+st.caption("Visualize core physics forces like aero downforce, drag, and brake distance based on current setup.")
 
-if st.button("Find Optimal Trade-offs (Pareto Front)"):
-    with st.spinner("Running Multi-Objective Optimization... This will take longer."):
-        pareto_df = run_pareto_optimization(track_conditions, n_steps=15)
-        st.session_state.pareto_front = pareto_df
+if 'setup' not in st.session_state:
+    st.session_state.setup = {
+        "front_wing_angle": 25,
+        "rear_wing_angle": 25,
+        "ride_height": 35,
+        "suspension_stiffness": 5,
+        "brake_bias": 54
+    }
 
-if st.session_state.pareto_front is not None:
-    df_pareto = st.session_state.pareto_front
-    
-    hover_text = [
-        f"<b>Lap Time: {row.lap_time:.3f}s</b><br>Tire Score: {row.tire_preservation:.2f}<br>---<br>" +
-        "<br>".join([f"<b>{k.replace('_', ' ').title()}:</b> {v}" for k, v in row.setup.items()])
-        for row in df_pareto.itertuples()
-    ]
+setup = st.session_state.setup
 
-    fig_pareto = px.scatter(
-        df_pareto, 
-        x="lap_time", y="tire_preservation", 
-        title="Optimal Setups: Lap Time vs. Tire Preservation Trade-off",
-        labels={"lap_time": "Predicted Lap Time (s) - Lower is Better →", "tire_preservation": "Tire Preservation Score - Higher is Better →"},
-        color="tire_preservation",
-        color_continuous_scale=px.colors.sequential.Viridis,
-        hover_name=hover_text
+# Input ranges
+speeds = np.linspace(50, 350, 100)  # km/h
+
+# Downforce
+car = get_car_params(setup)
+downforces = [compute_downforce(speed, car["downforce_coeff"]) for speed in speeds]
+fig_df = go.Figure()
+fig_df.add_trace(go.Scatter(x=speeds, y=downforces, mode='lines', name='Downforce'))
+fig_df.update_layout(title="Aero Downforce vs. Speed", xaxis_title="Speed (km/h)", yaxis_title="Downforce (N)")
+st.plotly_chart(fig_df, use_container_width=True)
+
+# Drag Force
+car = get_car_params(setup)
+drags = [compute_drag(speed, car["drag_coeff"]) for speed in speeds]
+fig_drag = go.Figure()
+fig_drag.add_trace(go.Scatter(x=speeds, y=drags, mode='lines', name='Drag Force', line=dict(color='orange')))
+fig_drag.update_layout(title="Drag Force vs. Speed", xaxis_title="Speed (km/h)", yaxis_title="Drag (N)")
+st.plotly_chart(fig_drag, use_container_width=True)
+
+# Brake Distance (at different entry speeds)
+st.subheader("🛑 Brake Distance at Various Speeds")
+brake_speeds = [100, 150, 200, 250, 300]
+brake_distances = [compute_brake_distance(v) for v in brake_speeds]
+st.bar_chart(pd.DataFrame({"Speed (km/h)": brake_speeds, "Brake Distance (m)": brake_distances}).set_index("Speed (km/h)"))
+
+def get_predicted_lap_time(setup_dict, track_conditions):
+    """Calculates a predicted lap time based on a simple formula for display."""
+    base_lap = track_conditions.get('base_lap_time', 90.0)
+    aero_penalty = (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.04
+    cornering_bonus = (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.02
+    ride_height_effect = (setup_dict["ride_height"] - 30) * 0.05
+    return base_lap + aero_penalty - cornering_bonus + ride_height_effect
+
+# --- 📊 Sensitivity Analysis ---
+with st.expander("📊 Sensitivity Analysis", expanded=False):
+    st.header("📊 Sensitivity Analysis")
+
+    st.markdown("Understand how changes in individual setup parameters affect lap time.")
+
+    selected_param = st.selectbox("Choose a parameter to analyze:", [
+        "front_wing_angle",
+        "rear_wing_angle",
+        "ride_height",
+        "suspension_stiffness",
+        "brake_bias"
+    ], key="sensitivity_param")
+
+    param_range = {
+        "front_wing_angle": range(0, 51, 5),
+        "rear_wing_angle": range(0, 51, 5),
+        "ride_height": range(20, 51, 2),
+        "suspension_stiffness": range(1, 11),
+        "brake_bias": range(50, 61)
+    }
+
+    setup_copy = st.session_state.setup.copy()
+    x_vals, y_vals = [], []
+    for val in param_range[selected_param]:
+        setup_copy[selected_param] = val
+        lap = get_predicted_lap_time(setup_copy, track_conditions)
+        x_vals.append(val)
+        y_vals.append(lap)
+
+    fig_sens = go.Figure()
+    fig_sens.add_trace(go.Scatter(x=x_vals, y=y_vals, mode="lines+markers", line=dict(width=3)))
+    fig_sens.update_layout(
+        title=f"Lap Time Sensitivity to {selected_param.replace('_',' ').title()}",
+        xaxis_title=selected_param.replace('_',' ').title(),
+        yaxis_title="Predicted Lap Time (s)",
+        height=400
     )
-    fig_pareto.update_traces(customdata=hover_text, hovertemplate='%{customdata}<extra></extra>', marker=dict(size=12, line=dict(width=1,color='DarkSlateGrey')))
-    st.plotly_chart(fig_pareto, use_container_width=True)
+    st.plotly_chart(fig_sens, use_container_width=True)
 
-# --- Setup Comparison Section ---
+# --- 🎥 Telemetry Playback Viewer ---
+with st.expander("🎥 Telemetry Playback Viewer", expanded=False):
+    st.header("🎥 Telemetry Playback Viewer")
+
+    st.markdown("Visualize how your current setup performs across different track segments.")
+
+    def generate_telemetry_trace(setup):
+        distance = np.linspace(0, 5000, 500)
+        max_speed = 350 - (setup["front_wing_angle"] + setup["rear_wing_angle"]) * 0.5
+        min_speed = 80 + (setup["front_wing_angle"] + setup["rear_wing_angle"]) * 0.3
+        fast_speed = 200 + (setup["front_wing_angle"] + setup["rear_wing_angle"]) * 0.4
+
+        speed = np.zeros_like(distance)
+        speed[distance <= 1000] = max_speed
+        speed[(distance > 1000) & (distance <= 1500)] = min_speed
+        speed[(distance > 1500) & (distance <= 3000)] = max_speed
+        speed[(distance > 3000) & (distance <= 3500)] = fast_speed
+        speed[distance > 3500] = max_speed
+
+        speed = np.convolve(speed, np.ones(15)/15, mode='same')
+        return distance, speed
+
+    dist, spd = generate_telemetry_trace(st.session_state.setup)
+    fig_playback = go.Figure()
+    fig_playback.add_trace(go.Scatter(x=dist, y=spd, mode='lines', name='Speed Trace'))
+    fig_playback.update_layout(
+        title="Simulated Speed Trace Based on Setup",
+        xaxis_title="Distance (m)",
+        yaxis_title="Speed (km/h)",
+        height=400
+    )
+    st.plotly_chart(fig_playback, use_container_width=True)
+
+# --- Interactive Track Walkthrough + Setup Notes ---
+st.header("🔹 Track Walkthrough & Sector Notes")
+st.markdown("Click a sector and leave a setup-related comment.")
+
+track_sectors = ["Sector 1", "Sector 2", "Sector 3"]
+selected_sector = st.selectbox("Choose Sector", track_sectors)
+comment_key = f"comment_{selected_sector.replace(' ', '_')}"
+if comment_key not in st.session_state:
+    st.session_state[comment_key] = ""
+st.session_state[comment_key] = st.text_area(f"Comment for {selected_sector}", value=st.session_state[comment_key], height=100)
+
+# Display all comments
+with st.expander("📃 View All Sector Notes"):
+    for sector in track_sectors:
+        key = f"comment_{sector.replace(' ', '_')}"
+        if st.session_state.get(key):
+            st.markdown(f"**{sector}**: {st.session_state[key]}")
+
+# --- 📊 Segment-Level Physics Breakdown ---
 st.divider()
-st.header("⚖️ Setup Comparison Workbench")
-if st.session_state.setup_A is None and st.session_state.setup_B is None:
-    st.info("Use the 'Save to Slot' buttons in the workbench above to compare setups.")
-else:
-    c1, c2 = st.columns(2, gap="large")
-    with c1:
-        st.subheader("Setup A")
-        if st.session_state.setup_A:
-            lap_time_A = get_predicted_lap_time(st.session_state.setup_A, track_conditions)
-            st.metric("Predicted Lap Time", f"{lap_time_A:.3f}s")
-            with st.expander("Show Setup A Parameters"): st.json(st.session_state.setup_A)
-        else: st.info("No setup in Slot A.")
-    with c2:
-        st.subheader("Setup B")
-        if st.session_state.setup_B:
-            lap_time_B = get_predicted_lap_time(st.session_state.setup_B, track_conditions)
-            delta = lap_time_B - get_predicted_lap_time(st.session_state.setup_A, track_conditions) if st.session_state.setup_A else None
-            st.metric("Predicted Lap Time", f"{lap_time_B:.3f}s", delta=f"{delta:.3f}s" if delta is not None else None, delta_color="inverse")
-            with st.expander("Show Setup B Parameters"): st.json(st.session_state.setup_B)
-        else: st.info("No setup in Slot B.")
+st.header("📊 Segment-Level Physics Breakdown")
 
-    if st.session_state.setup_A and st.session_state.setup_B:
-        st.subheader("🛰️ Comparative Telemetry & Balance Overlay")
-        
-        fig_comp_tele = go.Figure()
-        dist_A, speed_A = generate_telemetry_trace(st.session_state.setup_A); fig_comp_tele.add_trace(go.Scatter(x=dist_A, y=speed_A, mode='lines', name='Setup A', line=dict(color='cyan', width=4)))
-        dist_B, speed_B = generate_telemetry_trace(st.session_state.setup_B); fig_comp_tele.add_trace(go.Scatter(x=dist_B, y=speed_B, mode='lines', name='Setup B', line=dict(color='magenta', width=4, dash='dot')))
-        fig_comp_tele.update_layout(title="Speed Trace Comparison", xaxis_title="Distance (m)", yaxis_title="Speed (km/h)", legend=dict(yanchor="top",y=0.99,xanchor="left",x=0.01))
-        
-        fig_comp_radar = go.Figure()
-        categories = ['Top Speed', 'Cornering Grip', 'Stability', 'Tire Life']
-        scores_A = get_balance_scores(st.session_state.setup_A); fig_comp_radar.add_trace(go.Scatterpolar(r=scores_A, theta=categories, fill='toself', name='Setup A', line_color='cyan', opacity=0.7))
-        scores_B = get_balance_scores(st.session_state.setup_B); fig_comp_radar.add_trace(go.Scatterpolar(r=scores_B, theta=categories, fill='toself', name='Setup B', line_color='magenta', opacity=0.7))
-        fig_comp_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), title="Setup Balance Comparison", legend=dict(yanchor="bottom",y=0,xanchor="left",x=0))
+segment_data = []
+v = 0  # Initial speed
 
-        c1, c2 = st.columns(2)
-        with c1: st.plotly_chart(fig_comp_tele, use_container_width=True)
-        with c2: st.plotly_chart(fig_comp_radar, use_container_width=True)
+car = get_car_params(st.session_state.setup)
 
-# --- NEW: Export and Sharing Section ---
+for i, segment in enumerate(track):
+    if segment["type"] == "straight":
+        length = segment["length"]
+        next_v, t = simulate_straight(length, v, car)
+        segment_data.append({
+            "Segment": f"S{i+1} - Straight",
+            "Length (m)": length,
+            "Entry Speed (km/h)": round(v, 1),
+            "Exit Speed (km/h)": round(next_v, 1),
+            "Time (s)": round(t, 2)
+        })
+        v = next_v
+    elif segment["type"] == "corner":
+        radius = segment["radius"]
+        angle = segment["angle"]
+        next_v, t = simulate_corner(radius, angle, v, car)
+        segment_data.append({
+            "Segment": f"S{i+1} - Corner",
+            "Radius (m)": radius,
+            "Angle (deg)": angle,
+            "Entry Speed (km/h)": round(v, 1),
+            "Corner Speed (km/h)": round(next_v, 1),
+            "Time (s)": round(t, 2)
+        })
+        v = next_v
+
+st.dataframe(pd.DataFrame(segment_data))
+
+# --- 🧮 Pareto Optimization (Performance Tradeoff Analysis) ---
+with st.expander("🧮 Setup Optimization & Tradeoff Analysis", expanded=False):
+    st.header("🧮 Setup Optimization & Tradeoff Analysis")
+
+    if st.button("Run Optimization", key="btn_run_optimization"):
+        st.toast("Running multi-objective optimization...", icon="🚀")
+        pareto_front = run_pareto_optimization(track_conditions)
+        st.session_state.pareto_front = pareto_front
+        st.success(f"Found {len(pareto_front)} Pareto-optimal setups.")
+
+    if st.session_state.pareto_front:
+        st.subheader("📈 Pareto Front")
+        df = pd.DataFrame(st.session_state.pareto_front)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df['lap_time'],
+            y=df['tire_wear'],
+            mode='markers+text',
+            marker=dict(size=10, color='orange'),
+            text=[f"#{i+1}" for i in range(len(df))],
+            textposition="top center"
+        ))
+        fig.update_layout(
+            xaxis_title="Lap Time (s)",
+            yaxis_title="Tire Wear Index",
+            title="Lap Time vs Tire Wear Tradeoff",
+            height=400
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        sel = st.selectbox("Select a setup to load into workbench:", options=list(range(len(df))), format_func=lambda i: f"Setup #{i+1}" if i is not None else "None")
+        if st.button("Load Selected Setup", key="btn_load_pareto_setup"):
+            chosen = df.iloc[sel][['front_wing_angle', 'rear_wing_angle', 'ride_height', 'suspension_stiffness', 'brake_bias']].astype(int).to_dict()
+            for k, v in chosen.items():
+                st.session_state.setup[k] = v
+            st.success(f"Loaded Setup #{sel+1} into Workbench!")
+            st.rerun()
+
+# --- ⚖️ Setup Comparison Workbench ---
+with st.expander("⚖️ Setup Comparison Workbench", expanded=False):
+    st.header("⚖️ Setup Comparison Workbench")
+    if st.session_state.setup_A is None and st.session_state.setup_B is None:
+        st.info("Use the 'Save to Slot' buttons in the workbench above to compare setups.")
+    else:
+        c1, c2 = st.columns(2, gap="large")
+        with c1:
+            st.subheader("Setup A")
+            if st.session_state.setup_A:
+                lap_time_A = get_predicted_lap_time(st.session_state.setup_A, track_conditions)
+                st.metric("Predicted Lap Time", f"{lap_time_A:.3f}s")
+                with st.expander("Show Setup A Parameters"):
+                    st.json(st.session_state.setup_A)
+            else:
+                st.info("No setup in Slot A.")
+
+        with c2:
+            st.subheader("Setup B")
+            if st.session_state.setup_B:
+                lap_time_B = get_predicted_lap_time(st.session_state.setup_B, track_conditions)
+                delta = lap_time_B - get_predicted_lap_time(st.session_state.setup_A, track_conditions) if st.session_state.setup_A else None
+                st.metric("Predicted Lap Time", f"{lap_time_B:.3f}s", delta=f"{delta:.3f}s" if delta is not None else None, delta_color="inverse")
+                with st.expander("Show Setup B Parameters"):
+                    st.json(st.session_state.setup_B)
+            else:
+                st.info("No setup in Slot B.")
+
+        if st.session_state.setup_A and st.session_state.setup_B:
+            st.subheader("🛰️ Comparative Telemetry & Balance Overlay")
+
+            fig_comp_tele = go.Figure()
+            dist_A, speed_A = generate_telemetry_trace(st.session_state.setup_A)
+            fig_comp_tele.add_trace(go.Scatter(x=dist_A, y=speed_A, mode='lines', name='Setup A', line=dict(color='cyan', width=4)))
+            dist_B, speed_B = generate_telemetry_trace(st.session_state.setup_B)
+            fig_comp_tele.add_trace(go.Scatter(x=dist_B, y=speed_B, mode='lines', name='Setup B', line=dict(color='magenta', width=4, dash='dot')))
+            fig_comp_tele.update_layout(title="Speed Trace Comparison", xaxis_title="Distance (m)", yaxis_title="Speed (km/h)", legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01))
+
+            fig_comp_radar = go.Figure()
+            categories = ['Top Speed', 'Cornering Grip', 'Stability', 'Tire Life']
+            scores_A = get_balance_scores(st.session_state.setup_A)
+            fig_comp_radar.add_trace(go.Scatterpolar(r=scores_A, theta=categories, fill='toself', name='Setup A', line_color='cyan', opacity=0.7))
+            scores_B = get_balance_scores(st.session_state.setup_B)
+            fig_comp_radar.add_trace(go.Scatterpolar(r=scores_B, theta=categories, fill='toself', name='Setup B', line_color='magenta', opacity=0.7))
+            fig_comp_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), title="Setup Balance Comparison", legend=dict(yanchor="bottom", y=0, xanchor="left", x=0))
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.plotly_chart(fig_comp_tele, use_container_width=True)
+            with c2:
+                st.plotly_chart(fig_comp_radar, use_container_width=True)
+
+# --- 🤖 Recommended Setup ---
 st.divider()
 st.header("🤖 Recommended Setup Based on Conditions")
 
-if st.button("Get Recommended Setup"):
-    rec = recommend_setup(track_conditions)
-    if rec:
-        st.success("Recommended setup loaded into workbench!")
-        for k, v in rec.items():
-            st.session_state.setup[k] = v
-        st.rerun()
-    else:
-        st.warning("No historic data to make recommendation.")
+# Train the recommender model only once
+@st.cache_data
+def train_recommender(data):
+    if data.empty:
+        return None, None
+    features = ["front_wing_angle", "rear_wing_angle", "ride_height", "suspension_stiffness", "brake_bias"]
+    X = data[features]
+    y = data["lap_time"]
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    explainer = shap.Explainer(model, X)
+    return model, explainer
 
-st.divider()
-st.header("📤 Export & Share")
-st.markdown("Download the current setup from the workbench or generate a shareable link.")
+recommender_model, shap_explainer = train_recommender(historic_data)
 
-current_setup = st.session_state.setup
-current_lap_time = get_predicted_lap_time(current_setup, track_conditions)
+# Generate recommendation based on closest historic match
+def recommend_setup(track_conditions):
+    if recommender_model is None:
+        return None
+    track_temp = track_conditions["track_temperature"]
+    grip = track_conditions["grip_level"]
+    target_row = historic_data.copy()
+    target_row["score"] = np.abs(historic_data["track_temperature"] - track_temp) + np.abs(historic_data["grip_level"] - grip)
+    closest = target_row.sort_values("score").iloc[0]
+    return {
+        "front_wing_angle": int(closest["front_wing_angle"]),
+        "rear_wing_angle": int(closest["rear_wing_angle"]),
+        "ride_height": int(closest["ride_height"]),
+        "suspension_stiffness": int(closest["suspension_stiffness"]),
+        "brake_bias": int(closest["brake_bias"])
+    }
 
-export_cols = st.columns(3)
-with export_cols[0]:
-    # JSON Export
-    json_string = json.dumps(current_setup, indent=4)
-    st.download_button(
-        label="Download as JSON",
-        file_name=f"f1_setup_{selected_track}.json",
-        mime="application/json",
-        data=json_string,
-        use_container_width=True
-    )
-with export_cols[1]:
-    # PDF Export
-    pdf_bytes = generate_setup_pdf(current_setup, selected_track, current_lap_time)
-    st.download_button(
-        label="Download as PDF",
-        file_name=f"f1_setup_{selected_track}.pdf",
-        mime="application/pdf",
-        data=pdf_bytes,
-        use_container_width=True
-    )
+# --- 🤖 Recommended Setup ---
+with st.expander("🤖 Recommended Setup Based on Conditions", expanded=False):
+    st.header("🤖 Recommended Setup Based on Conditions")
 
-# Shareable Link Generation
-base_url = "https://your-app-url.streamlit.app/" # Replace with your deployed app's URL
-query_params = f"?fwa={setup['front_wing_angle']}&rwa={setup['rear_wing_angle']}&rh={setup['ride_height']}&ss={setup['suspension_stiffness']}&bb={setup['brake_bias']}"
-share_url = base_url + query_params
+    if st.button("Get Recommended Setup", key="btn_recommended_setup"):
+        rec = recommend_setup(track_conditions)
+        if rec:
+            st.success("Recommended setup loaded into workbench!")
+            for k, v in rec.items():
+                st.session_state.setup[k] = v
+            st.rerun()
+        else:
+            st.warning("No historic data to make recommendation.")
 
-with export_cols[2]:
-    if st.button("Generate Shareable Link", use_container_width=True):
-        st.code(share_url, language=None)
+# --- 📤 Export & Share ---
+with st.expander("📤 Export & Share", expanded=False):
+    st.header("📤 Export & Share")
+    st.markdown("Download the current setup from the workbench or generate a shareable link.")
 
-st.divider()
-st.header("🧠 Explain This Setup")
-if st.button("Show SHAP Insights"):
-    explain_current_setup(st.session_state.setup)
+    current_setup = st.session_state.setup
+    base_lap = track_conditions.get("base_lap_time", 90.0)
+    aero_penalty = (current_setup["front_wing_angle"] + current_setup["rear_wing_angle"]) * 0.04
+    cornering_bonus = (current_setup["front_wing_angle"] + current_setup["rear_wing_angle"]) * 0.02
+    ride_height_effect = (current_setup["ride_height"] - 30) * 0.05
+    current_lap_time = base_lap + aero_penalty - cornering_bonus + ride_height_effect
+
+    # PDF Generator
+    def generate_setup_pdf(setup_dict, track_name, lap_time):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 10, "F1 Car Setup Report", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+        pdf.set_font("Helvetica", "", 12)
+        pdf.cell(0, 10, f"Track: {track_name}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+        pdf.ln(10)
+
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 10, "Predicted Lap Time:", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 20)
+        pdf.cell(0, 10, f"{lap_time:.3f}s", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(5)
+
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 10, "Setup Parameters:", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 11)
+        for key, val in setup_dict.items():
+            pdf.cell(0, 7, f"  -  {key.replace('_', ' ').title()}: {val}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        return bytes(pdf.output())
+
+    export_cols = st.columns(3)
+    with export_cols[0]:
+        json_string = json.dumps(current_setup, indent=4)
+        st.download_button(
+            label="Download as JSON",
+            file_name=f"f1_setup_{selected_track}.json",
+            mime="application/json",
+            data=json_string,
+            use_container_width=True,
+            key="btn_download_json"
+        )
+
+    with export_cols[1]:
+        pdf_bytes = generate_setup_pdf(current_setup, selected_track, current_lap_time)
+        st.download_button(
+            label="Download as PDF",
+            file_name=f"f1_setup_{selected_track}.pdf",
+            mime="application/pdf",
+            data=pdf_bytes,
+            use_container_width=True,
+            key="btn_download_pdf"
+        )
+
+    base_url = "https://your-app-url.streamlit.app/"  # Replace with your deployed app URL
+    query_params = f"?fwa={current_setup['front_wing_angle']}&rwa={current_setup['rear_wing_angle']}&rh={current_setup['ride_height']}&ss={current_setup['suspension_stiffness']}&bb={current_setup['brake_bias']}"
+    share_url = base_url + query_params
+
+    with export_cols[2]:
+        if st.button("Generate Shareable Link", use_container_width=True, key="btn_generate_link"):
+            st.code(share_url, language=None)
+
+# --- Train Recommender ---
+def train_recommender(data):
+    if data.empty:
+        return None, None
+    features = ["front_wing_angle", "rear_wing_angle", "ride_height", "suspension_stiffness", "brake_bias"]
+    X = data[features]
+    y = data["lap_time"]
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    explainer = shap.Explainer(model, X)
+    return model, explainer
+
+recommender_model, shap_explainer = train_recommender(historic_data)
+
+# --- Helper: Recommend Setup ---
+def recommend_setup(track_conditions):
+    if recommender_model is None:
+        return None
+    track_temp = track_conditions["track_temperature"]
+    grip = track_conditions["grip_level"]
+    target_row = historic_data.copy()
+    target_row["score"] = np.abs(historic_data["track_temperature"] - track_temp) + np.abs(historic_data["grip_level"] - grip)
+    closest = target_row.sort_values("score").iloc[0]
+    return {
+        "front_wing_angle": int(closest["front_wing_angle"]),
+        "rear_wing_angle": int(closest["rear_wing_angle"]),
+        "ride_height": int(closest["ride_height"]),
+        "suspension_stiffness": int(closest["suspension_stiffness"]),
+        "brake_bias": int(closest["brake_bias"])
+    }
+
+# --- 🧠 SHAP Explainability ---
+with st.expander("🧠 SHAP Explainability", expanded=False):
+    st.header("🧠 SHAP Explainability")
+
+    # Reuse the trained SHAP explainer from earlier if available
+    def explain_current_setup(current_setup):
+        if shap_explainer is None:
+            st.warning("Explainability model not available.")
+            return
+        sample = pd.DataFrame([current_setup])
+        shap_values = shap_explainer(sample)
+        st.subheader("🔍 Why this setup works")
+        st.caption("Feature importance visualized using SHAP values.")
+        shap.plots.waterfall(shap_values[0], show=False)
+        st.pyplot(bbox_inches='tight', dpi=300, pad_inches=0.1)
+
+    if st.button("Show SHAP Insights", key="btn_shap_insights"):
+        explain_current_setup(st.session_state.setup)
+
+# --- Return to Top Button ---
+st.markdown("""
+    <div style="text-align:right; margin-top: 3em;">
+        <a href="#top">
+            <button style="padding:0.5em 1em; font-size:1em; border:none; background-color:#2e86de; color:white; border-radius:6px; cursor:pointer;">
+                🔝 Return to Top
+            </button>
+        </a>
+    </div>
+""", unsafe_allow_html=True)
