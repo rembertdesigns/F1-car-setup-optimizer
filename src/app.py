@@ -20,23 +20,8 @@ historic_data = pd.read_csv("data/historic_setups.csv") if os.path.exists("data/
 
 st.title("🏎️ F1 Car Setup Workbench")
 st.markdown("Interactively create and optimize a car setup for different performance tradeoffs.")
-main_cols = st.columns([0.25, 0.4, 0.35], gap="large")
-
-# --- ⚙️ Controls ---
 # Anchor for return-to-top functionality
 st.markdown('<a name="top"></a>', unsafe_allow_html=True)
-
-with st.expander("⚙️ Track & Conditions", expanded=True):
-    st.header("⚙️ Controls")
-
-if 'setup' not in st.session_state:
-    st.session_state.setup = {"front_wing_angle": 25, "rear_wing_angle": 25, "ride_height": 35, "suspension_stiffness": 5, "brake_bias": 54}
-if 'setup_A' not in st.session_state:
-    st.session_state.setup_A = None
-if 'setup_B' not in st.session_state:
-    st.session_state.setup_B = None
-if 'pareto_front' not in st.session_state:
-    st.session_state.pareto_front = None
 
 TRACKS_DATA = {
     "Monza": {
@@ -138,8 +123,28 @@ TRACKS_DATA = {
         "description": "Challenging braking zones and walls. Low drag helps.",
         "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/CanadianGP/Montreal_Circuit.png.transform/9col-retina/image.png",
         "base_lap_time": 76.0
+    },
+    "Miami": {
+        "description": "New track. High-speed corners and elevation changes.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/MiamiGP/Miami_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 90.0
     }
 }
+
+col1, col2, col3 = st.columns([1, 1, 1], gap="large")
+
+# --- ⚙️ Controls ---
+with col1:
+    st.header("⚙️ Controls")
+
+if 'setup' not in st.session_state:
+    st.session_state.setup = {"front_wing_angle": 25, "rear_wing_angle": 25, "ride_height": 35, "suspension_stiffness": 5, "brake_bias": 54}
+if 'setup_A' not in st.session_state:
+    st.session_state.setup_A = None
+if 'setup_B' not in st.session_state:
+    st.session_state.setup_B = None
+if 'pareto_front' not in st.session_state:
+    st.session_state.pareto_front = None
 
 selected_track = st.selectbox("Select Track", list(TRACKS_DATA.keys()))
 track_info = TRACKS_DATA[selected_track]
@@ -155,7 +160,7 @@ track_conditions = {
 }
 
 # --- ⚖️ Optimization Weights ---
-with st.expander("⚖️ Optimization Weights", expanded=True):
+with col3:
     st.header("⚖️ Optimization Weights")
     lap_time_weight = st.slider("🏁 Lap Time Focus", 0.0, 1.0, 0.6, 0.05, key="weight_lap")
     tire_preservation_weight = st.slider("🛞 Tire Preservation", 0.0, 1.0, 0.2, 0.05, key="weight_tire")
@@ -165,7 +170,7 @@ with st.expander("⚖️ Optimization Weights", expanded=True):
         st.error(f"Weights must sum to 1.0 (is {total_weight:.2f})")
 
 # --- COLUMN 2: SETUP WORKBENCH ---
-with main_cols[1]:
+with col2:
     st.header("🔧 Setup Workbench")
     st.markdown("Adjust sliders to create a setup, or run an optimizer to find one.")
     
@@ -468,56 +473,63 @@ with st.expander("🧮 Setup Optimization & Tradeoff Analysis", expanded=False):
             st.rerun()
 
 # --- ⚖️ Setup Comparison Workbench ---
-with st.expander("⚖️ Setup Comparison Workbench", expanded=False):
-    st.header("⚖️ Setup Comparison Workbench")
-    if st.session_state.setup_A is None and st.session_state.setup_B is None:
-        st.info("Use the 'Save to Slot' buttons in the workbench above to compare setups.")
-    else:
-        c1, c2 = st.columns(2, gap="large")
+st.divider()
+st.header("⚖️ Setup Comparison Workbench")
+
+if st.session_state.setup_A is None and st.session_state.setup_B is None:
+    st.info("Use the 'Save to Slot' buttons in the workbench above to compare setups.")
+else:
+    c1, c2 = st.columns(2, gap="large")
+
+    with c1:
+        st.subheader("Setup A")
+        if st.session_state.setup_A:
+            lap_time_A = get_predicted_lap_time(st.session_state.setup_A, track_conditions)
+            st.metric("Predicted Lap Time", f"{lap_time_A:.3f}s")
+        else:
+            st.info("No setup in Slot A.")
+
+    with c2:
+        st.subheader("Setup B")
+        if st.session_state.setup_B:
+            lap_time_B = get_predicted_lap_time(st.session_state.setup_B, track_conditions)
+            delta = lap_time_B - get_predicted_lap_time(st.session_state.setup_A, track_conditions) if st.session_state.setup_A else None
+            st.metric("Predicted Lap Time", f"{lap_time_B:.3f}s", delta=f"{delta:.3f}s" if delta is not None else None, delta_color="inverse")
+        else:
+            st.info("No setup in Slot B.")
+
+    # Flattened Expanders (not inside another expander)
+    if st.session_state.setup_A:
+        with st.expander("📋 Show Setup A Parameters"):
+            st.json(st.session_state.setup_A)
+
+    if st.session_state.setup_B:
+        with st.expander("📋 Show Setup B Parameters"):
+            st.json(st.session_state.setup_B)
+
+    if st.session_state.setup_A and st.session_state.setup_B:
+        st.subheader("🛰️ Comparative Telemetry & Balance Overlay")
+
+        fig_comp_tele = go.Figure()
+        dist_A, speed_A = generate_telemetry_trace(st.session_state.setup_A)
+        fig_comp_tele.add_trace(go.Scatter(x=dist_A, y=speed_A, mode='lines', name='Setup A', line=dict(color='cyan', width=4)))
+        dist_B, speed_B = generate_telemetry_trace(st.session_state.setup_B)
+        fig_comp_tele.add_trace(go.Scatter(x=dist_B, y=speed_B, mode='lines', name='Setup B', line=dict(color='magenta', width=4, dash='dot')))
+        fig_comp_tele.update_layout(title="Speed Trace Comparison", xaxis_title="Distance (m)", yaxis_title="Speed (km/h)", legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01))
+
+        fig_comp_radar = go.Figure()
+        categories = ['Top Speed', 'Cornering Grip', 'Stability', 'Tire Life']
+        scores_A = get_balance_scores(st.session_state.setup_A)
+        fig_comp_radar.add_trace(go.Scatterpolar(r=scores_A, theta=categories, fill='toself', name='Setup A', line_color='cyan', opacity=0.7))
+        scores_B = get_balance_scores(st.session_state.setup_B)
+        fig_comp_radar.add_trace(go.Scatterpolar(r=scores_B, theta=categories, fill='toself', name='Setup B', line_color='magenta', opacity=0.7))
+        fig_comp_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), title="Setup Balance Comparison", legend=dict(yanchor="bottom", y=0, xanchor="left", x=0))
+
+        c1, c2 = st.columns(2)
         with c1:
-            st.subheader("Setup A")
-            if st.session_state.setup_A:
-                lap_time_A = get_predicted_lap_time(st.session_state.setup_A, track_conditions)
-                st.metric("Predicted Lap Time", f"{lap_time_A:.3f}s")
-                with st.expander("Show Setup A Parameters"):
-                    st.json(st.session_state.setup_A)
-            else:
-                st.info("No setup in Slot A.")
-
+            st.plotly_chart(fig_comp_tele, use_container_width=True)
         with c2:
-            st.subheader("Setup B")
-            if st.session_state.setup_B:
-                lap_time_B = get_predicted_lap_time(st.session_state.setup_B, track_conditions)
-                delta = lap_time_B - get_predicted_lap_time(st.session_state.setup_A, track_conditions) if st.session_state.setup_A else None
-                st.metric("Predicted Lap Time", f"{lap_time_B:.3f}s", delta=f"{delta:.3f}s" if delta is not None else None, delta_color="inverse")
-                with st.expander("Show Setup B Parameters"):
-                    st.json(st.session_state.setup_B)
-            else:
-                st.info("No setup in Slot B.")
-
-        if st.session_state.setup_A and st.session_state.setup_B:
-            st.subheader("🛰️ Comparative Telemetry & Balance Overlay")
-
-            fig_comp_tele = go.Figure()
-            dist_A, speed_A = generate_telemetry_trace(st.session_state.setup_A)
-            fig_comp_tele.add_trace(go.Scatter(x=dist_A, y=speed_A, mode='lines', name='Setup A', line=dict(color='cyan', width=4)))
-            dist_B, speed_B = generate_telemetry_trace(st.session_state.setup_B)
-            fig_comp_tele.add_trace(go.Scatter(x=dist_B, y=speed_B, mode='lines', name='Setup B', line=dict(color='magenta', width=4, dash='dot')))
-            fig_comp_tele.update_layout(title="Speed Trace Comparison", xaxis_title="Distance (m)", yaxis_title="Speed (km/h)", legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01))
-
-            fig_comp_radar = go.Figure()
-            categories = ['Top Speed', 'Cornering Grip', 'Stability', 'Tire Life']
-            scores_A = get_balance_scores(st.session_state.setup_A)
-            fig_comp_radar.add_trace(go.Scatterpolar(r=scores_A, theta=categories, fill='toself', name='Setup A', line_color='cyan', opacity=0.7))
-            scores_B = get_balance_scores(st.session_state.setup_B)
-            fig_comp_radar.add_trace(go.Scatterpolar(r=scores_B, theta=categories, fill='toself', name='Setup B', line_color='magenta', opacity=0.7))
-            fig_comp_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), title="Setup Balance Comparison", legend=dict(yanchor="bottom", y=0, xanchor="left", x=0))
-
-            c1, c2 = st.columns(2)
-            with c1:
-                st.plotly_chart(fig_comp_tele, use_container_width=True)
-            with c2:
-                st.plotly_chart(fig_comp_radar, use_container_width=True)
+            st.plotly_chart(fig_comp_radar, use_container_width=True)
 
 # --- 🤖 Recommended Setup ---
 st.divider()
