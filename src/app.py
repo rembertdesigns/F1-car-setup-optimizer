@@ -216,6 +216,45 @@ with main_cols[1]:
     if c3.button("Save to Slot B", use_container_width=True):
         st.session_state.setup_B = st.session_state.setup.copy(); st.toast("✅ Setup B saved!")
 
+# --- Sensitivity Analysis Section ---
+st.divider()
+st.header("🔍 Setup Sensitivity Analysis")
+if 'last_optimal_setup' not in st.session_state:
+    st.session_state.last_optimal_setup = None
+
+if st.session_state.setup:
+    st.session_state.last_optimal_setup = st.session_state.setup.copy()
+
+if st.session_state.last_optimal_setup:
+    st.subheader("Analyze Setup Parameter Sensitivity")
+    param_to_test = st.selectbox("Choose parameter to analyze:", [
+        "front_wing_angle", "rear_wing_angle", "ride_height", "suspension_stiffness", "brake_bias"])
+    range_val = st.slider("Change range (+/- value):", 1, 10, 5)
+    if st.button("Run Sensitivity Analysis", use_container_width=True):
+        param_range = range(st.session_state.last_optimal_setup[param_to_test] - range_val,
+                            st.session_state.last_optimal_setup[param_to_test] + range_val + 1)
+        lap_times = []
+        x_vals = []
+
+        for val in param_range:
+            test_setup = st.session_state.last_optimal_setup.copy()
+            test_setup[param_to_test] = val
+            lap_time = get_predicted_lap_time(test_setup, track_conditions)
+            x_vals.append(val)
+            lap_times.append(lap_time)
+
+        fig_sensitivity = go.Figure()
+        fig_sensitivity.add_trace(go.Scatter(x=x_vals, y=lap_times, mode='lines+markers', name='Lap Time vs. Value'))
+        fig_sensitivity.update_layout(
+            title=f"Sensitivity of Lap Time to {param_to_test.replace('_',' ').title()}",
+            xaxis_title=f"{param_to_test.replace('_',' ').title()}",
+            yaxis_title="Predicted Lap Time (s)",
+            height=350
+        )
+        st.plotly_chart(fig_sensitivity, use_container_width=True)
+else:
+    st.info("Run an optimization first to analyze sensitivity around an optimal setup.")
+
 # --- COLUMN 3: LIVE ANALYSIS ---
 with main_cols[2]:
     st.header("📊 Live Analysis")
