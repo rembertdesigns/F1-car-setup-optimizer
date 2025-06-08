@@ -4,12 +4,47 @@ import pandas as pd
 import numpy as np
 import time
 import os
-import json  # ✅ for exporting to JSON
-from fpdf import FPDF  # ✅ for PDF generation
-from fpdf.enums import XPos, YPos  # ✅ for PDF layout control
+import json
+from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 from optimizer import optimize_setup, run_pareto_optimization
+from sklearn.ensemble import RandomForestRegressor
+import shap
 
 st.set_page_config(page_title="F1 Car Setup Optimizer", layout="wide")
+# Load historic setup data if available
+historic_data = pd.read_csv("data/historic_setups.csv") if os.path.exists("data/historic_setups.csv") else pd.DataFrame()
+
+# --- Train Recommender ---
+def train_recommender(data):
+    if data.empty:
+        return None, None
+    features = ["front_wing_angle", "rear_wing_angle", "ride_height", "suspension_stiffness", "brake_bias"]
+    X = data[features]
+    y = data["lap_time"]
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    explainer = shap.Explainer(model, X)
+    return model, explainer
+
+recommender_model, shap_explainer = train_recommender(historic_data)
+
+# --- Helper: Recommend Setup ---
+def recommend_setup(track_conditions):
+    if recommender_model is None:
+        return None
+    track_temp = track_conditions["track_temperature"]
+    grip = track_conditions["grip_level"]
+    target_row = historic_data.copy()
+    target_row["score"] = np.abs(historic_data["track_temperature"] - track_temp) + np.abs(historic_data["grip_level"] - grip)
+    closest = target_row.sort_values("score").iloc[0]
+    return {
+        "front_wing_angle": int(closest["front_wing_angle"]),
+        "rear_wing_angle": int(closest["rear_wing_angle"]),
+        "ride_height": int(closest["ride_height"]),
+        "suspension_stiffness": int(closest["suspension_stiffness"]),
+        "brake_bias": int(closest["brake_bias"])
+    }
 
 st.title("🏎️ F1 Car Setup Workbench")
 st.markdown("Interactively create and optimize a car setup for different performance tradeoffs.")
@@ -407,6 +442,19 @@ else:
         with c2: st.plotly_chart(fig_comp_radar, use_container_width=True)
 
 # --- NEW: Export and Sharing Section ---
+st.divider()
+st.header("🤖 Recommended Setup Based on Conditions")
+
+if st.button("Get Recommended Setup"):
+    rec = recommend_setup(track_conditions)
+    if rec:
+        st.success("Recommended setup loaded into workbench!")
+        for k, v in rec.items():
+            st.session_state.setup[k] = v
+        st.rerun()
+    else:
+        st.warning("No historic data to make recommendation.")
+
 st.divider()
 st.header("📤 Export & Share")
 st.markdown("Download the current setup from the workbench or generate a shareable link.")
