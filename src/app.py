@@ -1,10 +1,12 @@
 import streamlit as st
 import plotly.graph_objects as go
+import pandas as pd
+import numpy as np
 import time
 import os
-import pandas as pd
-import numpy as np 
-
+import json  # ✅ for exporting to JSON
+from fpdf import FPDF  # ✅ for PDF generation
+from fpdf.enums import XPos, YPos  # ✅ for PDF layout control
 from optimizer import optimize_setup, run_pareto_optimization
 
 st.set_page_config(page_title="F1 Car Setup Optimizer", layout="wide")
@@ -147,6 +149,31 @@ def generate_telemetry_trace(setup_dict):
     speed = np.convolve(speed, np.ones(15)/15, mode='same')
     return distance, speed
 
+# --- NEW: PDF Generation for a single setup ---
+def generate_setup_pdf(setup_dict, track_name, lap_time):
+    """Creates a PDF summary of a car setup."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "F1 Car Setup Report", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 10, f"Track: {track_name}", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.ln(10)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 10, "Predicted Lap Time:", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "", 20)
+    pdf.cell(0, 10, f"{lap_time:.3f}s", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(5)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 10, "Setup Parameters:", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "", 11)
+    for key, val in setup_dict.items():
+        pdf.cell(0, 7, f"  -  {key.replace('_', ' ').title()}: {val}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    
+    return bytes(pdf.output())
+
 # --- Initialize Session State ---
 if 'setup' not in st.session_state:
     st.session_state.setup = {"front_wing_angle": 25, "rear_wing_angle": 25, "ride_height": 35, "suspension_stiffness": 5, "brake_bias": 54}
@@ -157,6 +184,19 @@ if 'setup_B' not in st.session_state:
 if 'pareto_front' not in st.session_state:
     st.session_state.pareto_front = None
 
+# --- NEW: Handle Shareable Links (URL Query Params) ---
+# This runs once at the beginning of the script execution
+if not st.session_state.get('url_params_loaded', False):
+    query_params = st.query_params
+    try:
+        if 'fwa' in query_params: st.session_state.setup['front_wing_angle'] = int(query_params['fwa'][0])
+        if 'rwa' in query_params: st.session_state.setup['rear_wing_angle'] = int(query_params['rwa'][0])
+        if 'rh' in query_params: st.session_state.setup['ride_height'] = int(query_params['rh'][0])
+        if 'ss' in query_params: st.session_state.setup['suspension_stiffness'] = int(query_params['ss'][0])
+        if 'bb' in query_params: st.session_state.setup['brake_bias'] = int(query_params['bb'][0])
+    except (ValueError, IndexError):
+        st.toast("⚠️ Could not parse setup from URL. Using default.", icon="⚠️")
+    st.session_state.url_params_loaded = True
 
 # --- App Layout ---
 main_cols = st.columns([0.25, 0.4, 0.35], gap="large")
@@ -167,7 +207,7 @@ with main_cols[0]:
     st.subheader("📍 Select Track & Conditions")
     selected_track = st.selectbox("Track", list(TRACKS_DATA.keys()), label_visibility="collapsed")
     track_info = TRACKS_DATA[selected_track]
-    st.image(track_info["image"], use_column_width=True)
+    st.image(track_info["image"], use_container_width=True)
     st.info(track_info["description"])
     
     # Define track conditions based on selection. The optimizer will use these.
@@ -203,18 +243,41 @@ with main_cols[1]:
     st.divider()
     st.subheader("🎯 Actions")
     c1, c2, c3 = st.columns(3)
-    if c1.button("Find Optimal Setup", use_container_width=True, type="primary", disabled=not np.isclose(total_weight, 1.0)):
-        weights = {"lap_time": lap_time_weight, "tire_preservation": tire_preservation_weight, "handling_balance": handling_weight}
-        with st.spinner("Running Bayesian Optimization..."):
-            best_params, predicted_lap = optimize_setup(weights, track_conditions)
-            
-        st.success(f"Optimized Lap Time: {predicted_lap:.3f}s")
-        for k,v in best_params.items(): st.session_state.setup[k] = int(v)
-        st.rerun()
-    if c2.button("Save to Slot A", use_container_width=True):
-        st.session_state.setup_A = st.session_state.setup.copy(); st.toast("✅ Setup A saved!")
-    if c3.button("Save to Slot B", use_container_width=True):
-        st.session_state.setup_B = st.session_state.setup.copy(); st.toast("✅ Setup B saved!")
+
+if c1.button("Find Optimal Setup", use_container_width=True, type="primary", disabled=not np.isclose(total_weight, 1.0)):
+    weights = {
+        "lap_time": lap_time_weight,
+        "tire_preservation": tire_preservation_weight,
+        "handling_balance": handling_weight
+    }
+    with st.spinner("Running Bayesian Optimization..."):
+        best_params, predicted_lap = optimize_setup(weights, track_conditions)
+
+    st.success(f"Optimized Lap Time: {predicted_lap:.3f}s")
+    for k, v in best_params.items():
+        st.session_state.setup[k] = int(v)
+    st.rerun()
+
+if c2.button("Save to Slot A", use_container_width=True):
+    st.session_state.setup_A = st.session_state.setup.copy()
+    st.toast("✅ Setup A saved!")
+
+if c3.button("Save to Slot B", use_container_width=True):
+    if st.session_state.setup != st.session_state.get("setup_A", {}):
+        st.session_state.setup_B = st.session_state.setup.copy()
+        st.toast("✅ Setup B saved!")
+    else:
+        st.warning("Setup B is identical to Setup A. Try adjusting it first.")
+
+# 🆕 Show delta from Setup A before saving B
+if st.session_state.get("setup_A"):
+    delta = {
+        k: st.session_state.setup[k] - st.session_state.setup_A[k]
+        for k in st.session_state.setup
+    }
+    st.caption("Δ from Setup A:")
+    st.json(delta)
+
 
 # --- Sensitivity Analysis Section ---
 st.divider()
@@ -343,3 +406,41 @@ else:
         with c1: st.plotly_chart(fig_comp_tele, use_container_width=True)
         with c2: st.plotly_chart(fig_comp_radar, use_container_width=True)
 
+# --- NEW: Export and Sharing Section ---
+st.divider()
+st.header("📤 Export & Share")
+st.markdown("Download the current setup from the workbench or generate a shareable link.")
+
+current_setup = st.session_state.setup
+current_lap_time = get_predicted_lap_time(current_setup, track_conditions)
+
+export_cols = st.columns(3)
+with export_cols[0]:
+    # JSON Export
+    json_string = json.dumps(current_setup, indent=4)
+    st.download_button(
+        label="Download as JSON",
+        file_name=f"f1_setup_{selected_track}.json",
+        mime="application/json",
+        data=json_string,
+        use_container_width=True
+    )
+with export_cols[1]:
+    # PDF Export
+    pdf_bytes = generate_setup_pdf(current_setup, selected_track, current_lap_time)
+    st.download_button(
+        label="Download as PDF",
+        file_name=f"f1_setup_{selected_track}.pdf",
+        mime="application/pdf",
+        data=pdf_bytes,
+        use_container_width=True
+    )
+
+# Shareable Link Generation
+base_url = "https://your-app-url.streamlit.app/" # Replace with your deployed app's URL
+query_params = f"?fwa={setup['front_wing_angle']}&rwa={setup['rear_wing_angle']}&rh={setup['ride_height']}&ss={setup['suspension_stiffness']}&bb={setup['brake_bias']}"
+share_url = base_url + query_params
+
+with export_cols[2]:
+    if st.button("Generate Shareable Link", use_container_width=True):
+        st.code(share_url, language=None)
