@@ -46,6 +46,19 @@ def recommend_setup(track_conditions):
         "brake_bias": int(closest["brake_bias"])
     }
 
+# --- Explainable Setup Insights (SHAP) ---
+def explain_current_setup(current_setup):
+    if shap_explainer is None:
+        st.warning("Explainability model not available.")
+        return
+    sample = pd.DataFrame([current_setup])
+    shap_values = shap_explainer(sample)
+    st.header("🧠 Explainable Setup Insights")
+    st.subheader("🔍 Why this setup works")
+    st.caption("Feature importance visualized using SHAP values.")
+    shap.plots.waterfall(shap_values[0], show=False)
+    st.pyplot(bbox_inches='tight', dpi=300, pad_inches=0.1)
+
 st.title("🏎️ F1 Car Setup Workbench")
 st.markdown("Interactively create and optimize a car setup for different performance tradeoffs.")
 st.divider()
@@ -492,3 +505,8 @@ share_url = base_url + query_params
 with export_cols[2]:
     if st.button("Generate Shareable Link", use_container_width=True):
         st.code(share_url, language=None)
+
+st.divider()
+st.header("🧠 Explain This Setup")
+if st.button("Show SHAP Insights"):
+    explain_current_setup(st.session_state.setup)
