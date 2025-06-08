@@ -63,6 +63,24 @@ st.title("🏎️ F1 Car Setup Workbench")
 st.markdown("Interactively create and optimize a car setup for different performance tradeoffs.")
 st.divider()
 
+# --- Interactive Track Walkthrough + Setup Notes ---
+st.header("🔹 Track Walkthrough & Sector Notes")
+st.markdown("Click a sector and leave a setup-related comment.")
+
+track_sectors = ["Sector 1", "Sector 2", "Sector 3"]
+selected_sector = st.selectbox("Choose Sector", track_sectors)
+comment_key = f"comment_{selected_sector.replace(' ', '_')}"
+if comment_key not in st.session_state:
+    st.session_state[comment_key] = ""
+st.session_state[comment_key] = st.text_area(f"Comment for {selected_sector}", value=st.session_state[comment_key], height=100)
+
+# Display all comments
+with st.expander("📃 View All Sector Notes"):
+    for sector in track_sectors:
+        key = f"comment_{sector.replace(' ', '_')}"
+        if st.session_state.get(key):
+            st.markdown(f"**{sector}**: {st.session_state[key]}")
+
 TRACKS_DATA = {
     "Monza": {
         "description": "The 'Temple of Speed'. Low downforce and top speed dominate.",
