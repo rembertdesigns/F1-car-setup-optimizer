@@ -89,3 +89,19 @@ streamlit run app.py
 ├── data/                      # Synthetic dataset
 ├── README.md
 ```
+
+---
+
+## 💡 Future Ideas
+
+- Add real-world telemetry data (via [FastF1](https://github.com/theOehrly/Fast-F1))
+- Integrate real-time weather or tire degradation models
+- Export strategy/setup as PDF report
+- User login + saved setups across sessions
+- Race replay visualization mode
+
+---
+
+## 🏁 License
+
+MIT License
