@@ -73,3 +73,19 @@ python3 src/train_model.py
 
 # Run the app
 streamlit run app.py
+```
+
+---
+
+## 📂 Project Structure
+
+```bash
+├── app.py                     # Main Streamlit app
+├── src/
+│   ├── train_model.py         # ML model training script
+│   ├── simulate_physics_model.py # Data generation
+│   └── optimizer.py           # Optimization logic
+├── models/                    # Trained ML model and plots
+├── data/                      # Synthetic dataset
+├── README.md
+```
