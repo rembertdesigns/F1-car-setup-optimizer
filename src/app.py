@@ -45,12 +45,43 @@ def get_balance_scores(setup_dict):
 
 def get_predicted_lap_time(setup_dict, track_conditions):
     """Calculates a predicted lap time based on a simple formula for display."""
-    # This mock function mirrors the logic in the enhanced optimizer.py
     base_lap = track_conditions.get('base_lap_time', 90.0)
     aero_penalty = (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.04
     cornering_bonus = (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.02
     ride_height_effect = (setup_dict["ride_height"] - 30) * 0.05
     return base_lap + aero_penalty - cornering_bonus + ride_height_effect
+
+# --- NEW: Telemetry Generation Function ---
+def generate_telemetry_trace(setup_dict):
+    """Generates a mock speed vs. distance trace for a generic lap."""
+    # Define a generic lap structure (in meters)
+    total_distance = 5000
+    distance = np.linspace(0, total_distance, 500)
+    
+    # Define segments of the lap
+    straight1_end = 1000
+    slow_corner_end = 1500
+    straight2_end = 3000
+    fast_corner_end = 3500
+    straight3_end = total_distance
+    
+    # Calculate performance characteristics from setup
+    max_speed = 350 - (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.5
+    min_corner_speed = 80 + (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.3
+    fast_corner_speed = 200 + (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.4
+    
+    # Generate speed profile
+    speed = np.zeros_like(distance)
+    speed[distance <= straight1_end] = max_speed
+    speed[(distance > straight1_end) & (distance <= slow_corner_end)] = min_corner_speed
+    speed[(distance > slow_corner_end) & (distance <= straight2_end)] = max_speed
+    speed[(distance > straight2_end) & (distance <= fast_corner_end)] = fast_corner_speed
+    speed[distance > fast_corner_end] = max_speed
+    
+    # Smooth the transitions
+    speed = np.convolve(speed, np.ones(15)/15, mode='same')
+    
+    return distance, speed
 
 
 # --- Initialize Session State ---
@@ -68,7 +99,7 @@ with st.sidebar:
     st.subheader("📍 Select Track")
     selected_track = st.selectbox("Choose a track for setup optimization", list(TRACKS_DATA.keys()))
     track_info = TRACKS_DATA[selected_track]
-    st.image(track_info["image"], use_column_width=True)
+    st.image(track_info["image"], use_container_width=True)
     st.info(track_info["description"])
     track_conditions = {"base_lap_time": track_info.get("base_lap_time", 90.0)}
     st.divider()
@@ -123,19 +154,34 @@ with col1:
 
 
 with col2:
-    st.subheader("📊 Live Setup Balance Profile")
+    st.subheader("📊 Setup Balance Profile")
     scores = get_balance_scores(st.session_state.setup)
     categories = ['Top Speed', 'Cornering Grip', 'Stability', 'Tire Life']
     fig = go.Figure(data=go.Scatterpolar(r=scores, theta=categories, fill='toself', name='Current Setup', line_color='#00D2BE'))
     fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), showlegend=False, height=350, margin=dict(l=40, r=40, t=40, b=40))
     st.plotly_chart(fig, use_container_width=True)
+    
     st.divider()
-    st.subheader("⚙️ Current Setup Values")
-    st.json(st.session_state.setup)
+
+    # --- NEW: Live Telemetry Trace ---
+    st.subheader("🛰️ Live Telemetry Trace")
+    distance, speed = generate_telemetry_trace(st.session_state.setup)
+    fig_telemetry = go.Figure()
+    fig_telemetry.add_trace(go.Scatter(x=distance, y=speed, mode='lines', name='Speed', line=dict(color='#00D2BE', width=4)))
+    fig_telemetry.update_layout(
+        title="Simulated Speed Trace for Current Setup",
+        xaxis_title="Distance (m)",
+        yaxis_title="Speed (km/h)",
+        yaxis_range=[min(speed)-20, max(speed)+20],
+        height=300,
+        margin=dict(l=40, r=40, t=40, b=40)
+    )
+    st.plotly_chart(fig_telemetry, use_container_width=True)
+
 
 st.divider()
 
-# --- ENHANCEMENT: Setup Comparison Workbench ---
+# --- Setup Comparison Workbench ---
 st.header("⚖️ Setup Comparison Workbench")
 
 if st.session_state.setup_A is None and st.session_state.setup_B is None:
@@ -177,3 +223,23 @@ else:
                 st.json(st.session_state.setup_B)
         else:
             st.info("No setup saved in Slot B.")
+    
+    # --- NEW: Comparative Telemetry Trace ---
+    if st.session_state.setup_A and st.session_state.setup_B:
+        st.subheader("🛰️ Comparative Telemetry Overlay")
+        dist_A, speed_A = generate_telemetry_trace(st.session_state.setup_A)
+        dist_B, speed_B = generate_telemetry_trace(st.session_state.setup_B)
+        
+        fig_comp_telemetry = go.Figure()
+        fig_comp_telemetry.add_trace(go.Scatter(x=dist_A, y=speed_A, mode='lines', name='Setup A', line=dict(color='cyan', width=4)))
+        fig_comp_telemetry.add_trace(go.Scatter(x=dist_B, y=speed_B, mode='lines', name='Setup B', line=dict(color='magenta', width=4, dash='dot')))
+        
+        fig_comp_telemetry.update_layout(
+            title="Speed Trace Comparison: Setup A vs. Setup B",
+            xaxis_title="Distance (m)",
+            yaxis_title="Speed (km/h)",
+            height=400,
+            margin=dict(l=40, r=40, t=50, b=40),
+            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+        )
+        st.plotly_chart(fig_comp_telemetry, use_container_width=True)
