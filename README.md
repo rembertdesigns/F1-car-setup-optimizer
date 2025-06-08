@@ -1,107 +1,116 @@
 # 🏎️ F1 Car Setup Optimizer
 
-An interactive F1 engineering simulation that lets you **optimize**, **analyze**, and **compare** car setups with AI-backed recommendations. Ideal for aspiring motorsport engineers, data scientists, or anyone looking to build smart, simulation-based apps.
-
-## 🚀 Live Demo
-**Coming Soon** – Streamlit Community Cloud deployment in progress.
+An interactive web application that acts as an F1 engineering "workbench," using Bayesian Optimization to find the optimal car setup for specific tracks and performance goals. This tool allows users to explore trade-offs between lap time, tire preservation, and handling in a dynamic, visual interface.
 
 ---
 
-## 📌 Overview
+## ✨ Key Features
 
-This app simulates F1 car setup tradeoffs using a custom ML model trained on synthetic data. It supports:
+* **Interactive Setup Workbench:**
+    * A modern UI built with Streamlit where users can adjust core car setup parameters (wing angles, ride height, suspension, brake bias) using interactive sliders.
+    * A live-updating **Radar Chart** provides immediate visual feedback on the car's performance balance (Top Speed, Cornering Grip, Stability, Tire Life).
+    * A **Simulated Telemetry Trace** visualizes the car's speed profile over a generic lap, instantly updating as sliders are moved.
 
-- Fast lap time predictions
-- Tradeoff optimization (speed vs tire preservation vs handling)
-- Interactive telemetry simulation
-- Setup comparisons (Slot A vs Slot B)
-- Full-track picker with real F1 circuits
-- Sensitivity Analysis of setup variables
+* **AI-Powered Optimization:**
+    * **Bayesian Optimization:** Utilizes `scikit-optimize` to intelligently search the vast parameter space for the best setup, avoiding inefficient brute-force methods.
+    * **Multi-Objective Tradeoffs:**
+        * **Weighted Optimization:** Find a single optimal setup based on user-defined weights for lap time, tire preservation, and handling balance.
+        * **Pareto Front Analysis:** Run a more advanced optimization to discover the entire frontier of optimal trade-offs between lap time and tire preservation, visualized on an interactive scatter plot.
 
----
-
-## 🧠 Key Features
-
-### 🔧 Setup Workbench
-Adjust front/rear wings, ride height, suspension, and brake bias to fine-tune your car.
-
-### 🧪 AI-Powered Optimization
-Bayesian Optimization finds the best setup for your chosen strategy:
-- Focus on fastest lap
-- Prioritize tire conservation
-- Balance cornering vs straight-line speed
-
-### 📈 Setup Tradeoff Visualizer
-Run **Pareto Optimization** to view the tradeoff curve between lap time and tire life.
-
-### 📊 Sensitivity Analysis
-Explore how changing a single parameter affects lap time — is your setup stable or "knife-edge"?
-
-### 📍 Track-Specific Insights
-Choose from 20+ real F1 tracks with custom base lap times and descriptions.
-
-### 📉 Setup Comparison Mode
-Save and compare two setups side-by-side with radar charts and telemetry overlays.
+* **Analysis and Workflow Tools:**
+    * **Track-Specific Context:** Choose from a list of F1 circuits, each with a visual layout and unique `base_lap_time` that influences the optimization.
+    * **Setup Comparison:** Save two different setups to "Slot A" and "Slot B" for a direct side-by-side comparison of their stats, balance profiles, and telemetry traces.
+    * **Preset Archetypes:** Quickly load common setup types like "Max Downforce" or "Low Drag" to use as a starting point.
+    * **Export & Share:**
+        * Download the current setup as a clean JSON or printable PDF report.
+        * Generate a shareable URL that loads the application with the specific setup parameters pre-filled.
 
 ---
 
 ## 🛠️ Technologies Used
 
-- **Python + Streamlit**: Interactive UI & app framework
-- **Scikit-learn**: ML model (Random Forest Regressor)
-- **Scikit-optimize (skopt)**: Bayesian Optimization
-- **Plotly**: Interactive visualizations
-- **NumPy, Pandas**: Data manipulation
-- **Joblib**: Model serialization
+* **Core:** Python 3.10+
+* **Optimization & Machine Learning:** `scikit-optimize` (for Bayesian Optimization), `scikit-learn` & `joblib` (for the underlying lap time prediction model).
+* **Data Handling:** NumPy, Pandas
+* **User Interface & Visualization:** Streamlit, Plotly
+* **PDF Generation:** `fpdf2`
 
 ---
 
-## 🧰 Setup & Installation
+## 🧱 Project Structure
 
 ```bash
-git clone https://github.com/rembertdesigns/F1-car-setup-optimizer.git
-cd F1-car-setup-optimizer
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Generate synthetic data
-python3 src/simulate_physics_model.py
-
-# Train model
-python3 src/train_model.py
-
-# Run the app
-streamlit run app.py
-```
-
----
-
-## 📂 Project Structure
-
-```bash
-├── app.py                     # Main Streamlit app
+F1-car-setup-optimizer/
+│
+├── data/
+│   └── historic_setups.csv    # Example data for recommender
+│
+├── models/
+│   └── lap_time_predictor.pkl   # Pre-trained ML model that predicts lap time
+│
 ├── src/
-│   ├── train_model.py         # ML model training script
-│   ├── simulate_physics_model.py # Data generation
-│   └── optimizer.py           # Optimization logic
-├── models/                    # Trained ML model and plots
-├── data/                      # Synthetic dataset
-├── README.md
+│   ├── app.py                   # The main Streamlit application script
+│   └── optimizer.py             # Contains the Bayesian optimization logic
+│
+├── notebooks/
+│   └── EDA.ipynb              # Exploratory Data Analysis notebook
+│
+├── train_model.py             # Script to train the ML model
+├── requirements.txt           # Python package dependencies
+└── README.md                  # This file
 ```
 
 ---
 
-## 💡 Future Ideas
+## 🚀 Getting Started
 
-- Add real-world telemetry data (via [FastF1](https://github.com/theOehrly/Fast-F1))
-- Integrate real-time weather or tire degradation models
-- Export strategy/setup as PDF report
-- User login + saved setups across sessions
-- Race replay visualization mode
+### Prerequisites
+
+* Python 3.10 or newer.
+* `pip` for package installation.
+
+### Installation
+
+1.  **Clone the repository:**
+    ```bash
+    git clone [https://github.com/rembertdesigns/F1-car-setup-optimizer.git](https://github.com/rembertdesigns/F1-car-setup-optimizer.git)
+    cd F1-car-setup-optimizer
+    ```
+
+2.  **Create and activate a virtual environment (recommended):**
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # On macOS/Linux
+    # On Windows: venv\Scripts\activate
+    ```
+
+3.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+### Running the Application
+
+1.  **Train the Prediction Model:** The optimizer requires a trained lap time model. If `models/lap_time_predictor.pkl` is not present, you must first train it by running `train_model.py`. This script may require a dataset, which can be generated by a separate data simulation script if needed.
+
+2.  **Launch the Streamlit App:**
+    From the project's root directory, run the following command:
+    ```bash
+    streamlit run src/app.py
+    ```
+    Open the URL provided in your terminal (usually `http://localhost:8501`) in your web browser.
 
 ---
 
-## 🏁 License
+## 🛣️ Future Enhancements
 
-MIT License
+* **Full Race Stint Simulation:** Integrate the logic from the Pit Stop Simulator to run a multi-lap stint with a given setup, showing how lap times degrade as tires wear out over time.
+* **Setup Sensitivity Analysis:** After finding an optimal setup, allow users to analyze how sensitive the lap time is to small changes in a single parameter, visualizing the performance "cliff."
+* **Advanced Physics Model:** Replace the formula-based telemetry/lap time functions with a more detailed physics model that accounts for weight transfer, suspension geometry, and more nuanced aerodynamics.
+* **User Accounts & Saved Setups:** Implement a simple database backend to allow users to save, name, and manage a library of their favorite setups across sessions.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
