@@ -5,33 +5,114 @@ import os
 import pandas as pd
 import numpy as np 
 
-# This now assumes your 'optimizer.py' file is updated and correct.
 from optimizer import optimize_setup, run_pareto_optimization
 
-# --- Page Setup ---
 st.set_page_config(page_title="F1 Car Setup Optimizer", layout="wide")
 
 st.title("🏎️ F1 Car Setup Workbench")
 st.markdown("Interactively create and optimize a car setup for different performance tradeoffs.")
 st.divider()
 
-# --- Data & Configuration ---
-# Store track information, including image paths and default conditions
 TRACKS_DATA = {
     "Monza": {
-        "description": "The 'Temple of Speed'. Requires low downforce for its long straights, but needs stability for chicanes.",
-        "image": "https://www.formula1.com/content/dam/fom-website/2018-redesign-assets/Circuit%20maps%2016x9/Monza_Circuit.png.transform/9col-retina/image.png",
+        "description": "The 'Temple of Speed'. Low downforce and top speed dominate.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/ItalianGP/Monza_Circuit.png.transform/9col-retina/image.png",
         "base_lap_time": 80.0
     },
     "Monaco": {
-        "description": "A tight, twisty street circuit where maximum downforce, agility, and stability are crucial. Top speed is irrelevant.",
-        "image": "https://www.formula1.com/content/dam/fom-website/2018-redesign-assets/Circuit%20maps%2016x9/Monoco_Circuit.png.transform/9col-retina/image.png",
+        "description": "Tight, twisty, and unforgiving. Max downforce and precision needed.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/MonacoGP/Monaco_Circuit.png.transform/9col-retina/image.png",
         "base_lap_time": 71.0
     },
     "Spa-Francorchamps": {
-        "description": "A classic track with a mix of long straights and fast, flowing corners. Requires a balanced setup.",
-        "image": "https://www.formula1.com/content/dam/fom-website/2018-redesign-assets/Circuit%20maps%2016x9/Spa-Francorchamps_Circuit.png.transform/9col-retina/image.png",
+        "description": "High-speed corners + elevation. A balanced setup is key.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/BelgianGP/Spa-Francorchamps_Circuit.png.transform/9col-retina/image.png",
         "base_lap_time": 105.0
+    },
+    "Silverstone": {
+        "description": "High-speed flowing track. Requires downforce and balance.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/BritishGP/Silverstone_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 93.0
+    },
+    "Suzuka": {
+        "description": "Figure-8 layout with fast esses. Demands precision and balance.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/JapaneseGP/Suzuka_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 90.0
+    },
+    "Circuit de Barcelona-Catalunya": {
+        "description": "Technical with variety. Good all-round car performance needed.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/SpanishGP/Barcelona_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 91.0
+    },
+    "Bahrain International Circuit": {
+        "description": "Brake-heavy. Good traction and cooling are critical.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/BahrainGP/Bahrain_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 93.5
+    },
+    "Interlagos": {
+        "description": "Short lap. High elevation, quick corners, and overtaking.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/BrazilGP/Interlagos_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 72.5
+    },
+    "Red Bull Ring": {
+        "description": "Short, fast, and flowing. Elevation changes matter.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/AustrianGP/Red_Bull_Ring_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 66.5
+    },
+    "Hungaroring": {
+        "description": "Twisty and technical. High downforce is key.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/HungarianGP/Hungaroring_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 77.5
+    },
+    "Circuit of the Americas": {
+        "description": "Modern layout with elevation. Balanced car is essential.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/USGP/Austin_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 97.0
+    },
+    "Singapore": {
+        "description": "Long, hot night race. Traction and cooling needed.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/SingaporeGP/Singapore_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 110.0
+    },
+    "Zandvoort": {
+        "description": "Fast and narrow. Banked turns and flowing rhythm.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/DutchGP/Zandvoort_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 72.0
+    },
+    "Jeddah Street Circuit": {
+        "description": "Very high speed for a street circuit. Thin margins.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/SaudiArabianGP/Jeddah_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 89.0
+    },
+    "Las Vegas Strip Circuit": {
+        "description": "New layout. Very long straights and low temperatures.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/LasVegasGP/LasVegas_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 100.0
+    },
+    "Yas Marina (Abu Dhabi)": {
+        "description": "Twilight race. Long straights with tight corners.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/AbuDhabiGP/Yas_Marina_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 94.0
+    },
+    "Imola": {
+        "description": "Historic, fast, and narrow. Track limits matter.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/EmiliaRomagnaGP/Imola_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 80.0
+    },
+    "Baku City Circuit": {
+        "description": "Huge straights + tight corners. Risk and reward.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/AzerbaijanGP/Baku_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 102.0
+    },
+    "Shanghai": {
+        "description": "Modern layout. Long corners test car stability.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/ChineseGP/Shanghai_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 95.0
+    },
+    "Canada (Montreal)": {
+        "description": "Challenging braking zones and walls. Low drag helps.",
+        "image": "https://www.formula1.com/content/dam/fom-website/manual/Misc/2023manual/CanadianGP/Montreal_Circuit.png.transform/9col-retina/image.png",
+        "base_lap_time": 76.0
     }
 }
 
@@ -222,3 +303,4 @@ else:
         c1, c2 = st.columns(2)
         with c1: st.plotly_chart(fig_comp_tele, use_container_width=True)
         with c2: st.plotly_chart(fig_comp_radar, use_container_width=True)
+
