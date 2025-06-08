@@ -1,46 +1,75 @@
 # 🏎️ F1 Car Setup Optimizer
 
-An interactive web application that uses Bayesian Optimization to find the optimal Formula 1 car setup for specific tracks and performance goals. This tool acts as a "Setup Workbench," allowing users to balance trade-offs between raw lap time, tire preservation, and handling.
+An interactive F1 engineering simulation that lets you **optimize**, **analyze**, and **compare** car setups with AI-backed recommendations. Ideal for aspiring motorsport engineers, data scientists, or anyone looking to build smart, simulation-based apps.
+
+## 🚀 Live Demo
+**Coming Soon** – Streamlit Community Cloud deployment in progress.
 
 ---
 
-## ✨ Key Features
+## 📌 Overview
 
-* **Interactive Setup Workbench:** A modern UI built with Streamlit where users can adjust car setup parameters (wing angles, ride height, suspension, brake bias) using interactive sliders.
-* **Live Performance Profile:** A dynamic radar chart provides immediate visual feedback on the car's balance as sliders are adjusted, showing the trade-offs between Top Speed, Cornering Grip, Stability, and Tire Life.
-* **Context-Aware Optimization:**
-    * **Track Selection:** Choose from classic F1 tracks like Monza, Monaco, and Spa, each with unique characteristics and a visual track map.
-    * **Condition Control:** Adjust parameters like track temperature and grip level to see how they influence the optimal setup.
-* **Bayesian Optimization Engine:**
-    * Utilizes `scikit-optimize` to intelligently search the vast parameter space for the best setup.
-    * Instead of brute-force, it efficiently hones in on high-performing setups based on what it learns.
-* **Multi-Objective Tradeoffs:**
-    * Users can define what "optimal" means to them by adjusting weights for three key goals: `Lap Time`, `Tire Preservation`, and `Handling Balance`.
-    * The optimizer finds the best setup that satisfies the user's specified priorities.
+This app simulates F1 car setup tradeoffs using a custom ML model trained on synthetic data. It supports:
+
+- Fast lap time predictions
+- Tradeoff optimization (speed vs tire preservation vs handling)
+- Interactive telemetry simulation
+- Setup comparisons (Slot A vs Slot B)
+- Full-track picker with real F1 circuits
+- Sensitivity Analysis of setup variables
+
+---
+
+## 🧠 Key Features
+
+### 🔧 Setup Workbench
+Adjust front/rear wings, ride height, suspension, and brake bias to fine-tune your car.
+
+### 🧪 AI-Powered Optimization
+Bayesian Optimization finds the best setup for your chosen strategy:
+- Focus on fastest lap
+- Prioritize tire conservation
+- Balance cornering vs straight-line speed
+
+### 📈 Setup Tradeoff Visualizer
+Run **Pareto Optimization** to view the tradeoff curve between lap time and tire life.
+
+### 📊 Sensitivity Analysis
+Explore how changing a single parameter affects lap time — is your setup stable or "knife-edge"?
+
+### 📍 Track-Specific Insights
+Choose from 20+ real F1 tracks with custom base lap times and descriptions.
+
+### 📉 Setup Comparison Mode
+Save and compare two setups side-by-side with radar charts and telemetry overlays.
 
 ---
 
 ## 🛠️ Technologies Used
 
-* **Core:** Python 3.10+
-* **Optimization & Machine Learning:** `scikit-optimize` (for Bayesian Optimization), `scikit-learn` & `joblib` (for the underlying lap time prediction model).
-* **Data Handling:** NumPy, Pandas
-* **User Interface & Visualization:** Streamlit, Plotly
+- **Python + Streamlit**: Interactive UI & app framework
+- **Scikit-learn**: ML model (Random Forest Regressor)
+- **Scikit-optimize (skopt)**: Bayesian Optimization
+- **Plotly**: Interactive visualizations
+- **NumPy, Pandas**: Data manipulation
+- **Joblib**: Model serialization
 
 ---
 
-## 🧱 Project Structure
+## 🧰 Setup & Installation
 
 ```bash
-F1-car-setup-optimizer/
-│
-├── models/
-│   └── lap_time_predictor.pkl   # Pre-trained ML model that predicts lap time from setup
-│
-├── src/
-│   ├── app.py                   # The main Streamlit application script
-│   └── optimizer.py             # Contains the Bayesian optimization logic
-│
-├── requirements.txt             # Python package dependencies
-└── README.md
-```
+git clone https://github.com/rembertdesigns/F1-car-setup-optimizer.git
+cd F1-car-setup-optimizer
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Generate synthetic data
+python3 src/simulate_physics_model.py
+
+# Train model
+python3 src/train_model.py
+
+# Run the app
+streamlit run app.py
