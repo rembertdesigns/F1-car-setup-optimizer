@@ -200,6 +200,15 @@ track_info = TRACKS_DATA[selected_track]
 
 st.image(track_info["image"], use_container_width=True)
 st.info(track_info["description"])
+# --- 🎯 Starting Position Slider ---
+starting_position = st.slider(
+    "🎯 Starting Grid Position",
+    min_value=1,
+    max_value=20,
+    value=10,
+    help="Used to tailor setup strategy (e.g., aggressive for front row, defensive for midfield)"
+)
+
 
 track_conditions = {
     "base_lap_time": track_info.get("base_lap_time", 90.0),
@@ -263,7 +272,7 @@ if c1.button("Run Optimization", use_container_width=True, type="primary", disab
     }
 
     with st.spinner(f"Running {mode}..."):
-        result = run_optimizer(selected_mode, track_conditions, weights=weights if selected_mode == "bayesian" else None)
+        result = run_optimizer(selected_mode, track_conditions, weights=weights, starting_position=starting_position)
 
     if selected_mode == "bayesian":
         best_params, predicted_lap = result
@@ -898,14 +907,23 @@ with st.expander("🧠 SHAP Explainability", expanded=False):
     if st.button("Show SHAP Insights", key="btn_shap_insights"):
         explain_current_setup(st.session_state.setup)
 
-# --- 📘 Setup Log Viewer ---
-st.divider()
-st.subheader("📘 RL & Manual Setup Log")
-
+# --- 📘 RL & Manual Setup Log ---
 log_path = "data/setup_log.csv"
 if os.path.exists(log_path):
     df_log = pd.read_csv(log_path)
     st.dataframe(df_log.sort_values("timestamp", ascending=False).reset_index(drop=True))
+
+    # --- 📊 RL vs Manual Lap Time Trends (Colored by Tire Type) ---
+    if all(col in df_log.columns for col in ["timestamp", "lap_time", "tire_type", "source"]):
+        fig = px.line(
+            df_log.sort_values("timestamp"),
+            x="timestamp",
+            y="lap_time",
+            color="source",
+            line_dash="tire_type",
+            title="Lap Time Trend by Setup Source and Tire Type"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     # --- 📥 CSV Download ---
     csv = df_log.to_csv(index=False).encode('utf-8')
@@ -915,21 +933,6 @@ if os.path.exists(log_path):
         file_name="setup_log.csv",
         mime="text/csv"
     )
-
-# --- 📊 RL vs Manual Lap Time Trends (Colored by Tire Type) ---
-if all(col in df_log.columns for col in ["timestamp", "lap_time", "tire_type", "source"]):
-    fig = px.line(
-        df_log.sort_values("timestamp"),
-        x="timestamp",
-        y="lap_time",
-        color="tire_type",  # Color by compound type: soft, medium, hard, etc.
-        line_dash="source",  # Dashed line for RL vs solid for Manual
-        markers=True,
-        title="Lap Time Trends by Tire Compound"
-    )
-    fig.update_layout(height=320, legend_title_text="Tire Type")
-    st.plotly_chart(fig, use_container_width=True)
-
 else:
     st.info("No logged setups yet. Use the RL agent or optimizer to generate and log a setup.")
 

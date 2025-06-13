@@ -40,26 +40,66 @@ def _prepare_feature_vector(setup_params, track_conditions):
         "ride_height": setup_params["ride_height"],
         "suspension_stiffness": setup_params["suspension_stiffness"],
         "brake_bias": setup_params["brake_bias"],
-        "track_temperature": track_conditions.get("track_temperature", 30.0),
-        "grip_level": track_conditions.get("grip_level", 1.0)
+        "track_temperature": track_conditions["track_temperature"],
+        "grip_level": track_conditions["grip_level"],
+        "fuel_weight": 100,
+        "traffic": 0.5,
+        "lap": 1,
+        "drs_active": 1,
+        "safety_car_active": 0,
+        "vsc_active": 0,
+        "anomaly": 0,
+        "tire_type_soft": int(track_conditions["tire_compound"] == "soft"),
+        "tire_type_medium": int(track_conditions["tire_compound"] == "medium"),
+        "tire_type_hard": int(track_conditions["tire_compound"] == "hard"),
+        "tire_type_intermediate": 0,
+        "tire_type_wet": 0,
+        "weather_Dry": int(track_conditions.get("weather", "Dry") == "Dry"),
+        "weather_Light Rain": int(track_conditions.get("weather", "Dry") == "Light Rain"),
+        "weather_Heavy Rain": int(track_conditions.get("weather", "Dry") == "Heavy Rain"),
     }
     return pd.DataFrame([feature_dict])[MODEL_FEATURES]
 
+# --- Grid Position Score ---
+def grid_position_score(setup, starting_position):
+    front_row = starting_position <= 3
+    midfield = 4 <= starting_position <= 12
+    backmarker = starting_position > 12
+
+    score = 0
+    if front_row:
+        score += (10 - setup["rear_wing_angle"]) * 0.3
+    if midfield:
+        score += setup["suspension_stiffness"] * 0.2 + setup["ride_height"] * 0.2
+    if backmarker:
+        score += setup["brake_bias"] * 0.3 + setup["front_wing_angle"] * 0.2
+
+    return score
+
+# --- Weighted Objective ---
+def weighted_objective(setup, weights, track_conditions, starting_position):
+    X = _prepare_feature_vector(setup, track_conditions)
+    predicted_lap_time = model.predict(X)[0]
+    tire_penalty = 0.2 * (setup["suspension_stiffness"] / 10.0) + 0.1 * abs(setup["brake_bias"] - 55) / 5.0
+    imbalance = abs(setup["rear_wing_angle"] - setup["front_wing_angle"]) / 50.0
+    position_score = grid_position_score(setup, starting_position)
+    score = (
+        weights["lap_time"] * predicted_lap_time +
+        weights["tire_preservation"] * tire_penalty +
+        weights["handling_balance"] * imbalance -
+        0.2 * position_score
+    )
+    return score
+
 # --- Original Bayesian Optimization ---
-def optimize_setup(weights, track_conditions):
+def optimize_setup(weights, track_conditions, starting_position=10):
     if model is None:
         raise RuntimeError("Model not loaded.")
 
     @use_named_args(space)
-    def composite_objective(**setup_params):
-        X = _prepare_feature_vector(setup_params, track_conditions)
-        predicted_lap_time = model.predict(X)[0]
-        tire_penalty = 0.2 * (setup_params["suspension_stiffness"] / 10.0) + 0.1 * abs(setup_params["brake_bias"] - 55) / 5.0
-        imbalance = abs(setup_params["rear_wing_angle"] - setup_params["front_wing_angle"]) / 50.0
-        score = (weights["lap_time"] * predicted_lap_time +
-                 weights["tire_preservation"] * tire_penalty +
-                 weights["handling_balance"] * imbalance)
-        return score
+    def composite_objective(**params):
+        setup_params = dict(params)
+        return weighted_objective(setup_params, weights, track_conditions, starting_position)
 
     result = gp_minimize(func=composite_objective, dimensions=space, n_calls=50, random_state=42, n_jobs=-1)
     best_params = {dim.name: val for dim, val in zip(space, result.x)}
@@ -132,9 +172,9 @@ def run_pareto_optimization(track_conditions, n_steps=15):
     return pd.DataFrame(pareto_front)
 
 # --- TOGGLE FUNCTION ---
-def run_optimizer(mode, track_conditions, weights=None):
+def run_optimizer(mode, track_conditions, weights=None, starting_position=10):
     if mode == "bayesian":
-        return optimize_setup(weights, track_conditions)
+        return optimize_setup(weights, track_conditions, starting_position=starting_position)
     elif mode == "pareto":
         return run_pareto_optimization(track_conditions)
     elif mode == "nsga2":
