@@ -5,15 +5,25 @@ import pandas as pd
 import numpy as np
 import time
 import os
-import json
 import shap
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
-from optimizer import optimize_setup, run_pareto_optimization
+from optimizer import run_optimizer, run_pareto_optimization
 from sklearn.ensemble import RandomForestRegressor
 from physics_model import compute_downforce, compute_drag, compute_brake_distance, simulate_straight, simulate_corner, get_car_params, track
 from physics_model import simulate_lap
+import joblib
+import json
 
+# Load anomaly detection model
+try:
+    anomaly_model = joblib.load("models/setup_anomaly_detector.pkl")
+    with open("models/anomaly_features.json", "r") as f:
+        anomaly_features = json.load(f)
+except Exception as e:
+    anomaly_model = None
+    anomaly_features = []
+    print(f"Warning: Anomaly detection model not loaded: {e}")
 
 st.set_page_config(page_title="F1 Car Setup Optimizer", layout="wide")
 
@@ -258,9 +268,38 @@ def get_balance_scores(setup_dict):
     tire_life = 10 - ((setup_dict["suspension_stiffness"] / 11) * 5 + top_speed * 0.1)
     return [np.clip(s, 0, 10) for s in [top_speed, cornering, stability, tire_life]]
 
+# --- Anomaly Detection Helper ---
+def check_for_anomaly(setup_dict, track_conditions, fuel_weight=100, traffic=0.5):
+    if anomaly_model is None:
+        return False, None
+    try:
+        full_input = {
+            **setup_dict,
+            "track_temperature": track_conditions.get("track_temperature", 30.0),
+            "grip_level": track_conditions.get("grip_level", 1.0),
+            "fuel_weight": fuel_weight,
+            "traffic": traffic
+        }
+        X = pd.DataFrame([full_input])[anomaly_features]
+        is_anomaly = anomaly_model.predict(X)[0] == -1
+        return is_anomaly, X.to_dict(orient="records")[0]
+    except Exception as e:
+        print(f"Anomaly check failed: {e}")
+        return False, None
+
 # --- 📊 Live Analysis ---
 st.divider()
 st.header("📊 Live Analysis")
+
+# --- Anomaly Detection ---
+is_anomaly, input_data = check_for_anomaly(
+    st.session_state.setup,
+    track_conditions=track_conditions,
+    fuel_weight=initial_fuel,
+    traffic=0.5  # You can later expose this as a slider
+)
+if is_anomaly:
+    st.error("⚠️ This setup appears to be an **outlier** or **potentially unsafe configuration**. Please review parameters carefully.")
 
 scores = get_balance_scores(st.session_state.setup)
 categories = ['Top Speed', 'Cornering Grip', 'Stability', 'Tire Life']
@@ -356,6 +395,23 @@ def get_predicted_lap_time(setup_dict, track_conditions):
     cornering_bonus = (setup_dict["front_wing_angle"] + setup_dict["rear_wing_angle"]) * 0.02
     ride_height_effect = (setup_dict["ride_height"] - 30) * 0.05
     return base_lap + aero_penalty - cornering_bonus + ride_height_effect
+
+def check_for_anomaly(setup_dict, track_conditions):
+    if not anomaly_model:
+        return False
+    feature_input = {
+        "front_wing_angle": setup_dict["front_wing_angle"],
+        "rear_wing_angle": setup_dict["rear_wing_angle"],
+        "ride_height": setup_dict["ride_height"],
+        "suspension_stiffness": setup_dict["suspension_stiffness"],
+        "brake_bias": setup_dict["brake_bias"],
+        "track_temperature": track_conditions.get("track_temperature", 30.0),
+        "grip_level": track_conditions.get("grip_level", 1.0),
+        "fuel_weight": track_conditions.get("fuel_weight", 10.0),
+        "traffic": track_conditions.get("traffic", 0.2)
+    }
+    X = pd.DataFrame([feature_input])[anomaly_features]
+    return anomaly_model.predict(X)[0] == -1  # -1 = anomaly
 
 # --- 📊 Sensitivity Analysis ---
 with st.expander("📊 Sensitivity Analysis", expanded=False):
