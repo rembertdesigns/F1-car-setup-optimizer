@@ -9,7 +9,7 @@ import json
 import shap
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
-from optimizer import optimize_setup, run_pareto_optimization
+from optimizer import run_optimizer
 from sklearn.ensemble import RandomForestRegressor
 from physics_model import compute_downforce, compute_drag, compute_brake_distance, simulate_straight, simulate_corner, get_car_params, track
 
@@ -159,6 +159,23 @@ track_conditions = {
     "tire_compound": st.selectbox("Target Tire Compound", ["soft", "medium", "hard"], index=0)
 }
 
+# --- 🔀 Optimizer Mode Selector ---
+st.divider()
+st.subheader("🔁 Choose Optimization Mode")
+mode = st.selectbox(
+    "Select an Optimization Mode",
+    ["Bayesian Optimization", "Pareto Scan", "NSGA-II Multi-Objective"],
+    index=0
+)
+
+mode_map = {
+    "Bayesian Optimization": "bayesian",
+    "Pareto Scan": "pareto",
+    "NSGA-II Multi-Objective": "nsga2"
+}
+
+selected_mode = mode_map[mode]
+
 # --- ⚖️ Optimization Weights ---
 with col3:
     st.header("⚖️ Optimization Weights")
@@ -185,19 +202,28 @@ with col2:
     st.subheader("🎯 Actions")
     c1, c2, c3 = st.columns(3)
 
-if c1.button("Find Optimal Setup", use_container_width=True, type="primary", disabled=not np.isclose(total_weight, 1.0)):
+if c1.button("Run Optimization", use_container_width=True, type="primary", disabled=not np.isclose(total_weight, 1.0)):
     weights = {
         "lap_time": lap_time_weight,
         "tire_preservation": tire_preservation_weight,
         "handling_balance": handling_weight
     }
-    with st.spinner("Running Bayesian Optimization..."):
-        best_params, predicted_lap = optimize_setup(weights, track_conditions)
 
-    st.success(f"Optimized Lap Time: {predicted_lap:.3f}s")
-    for k, v in best_params.items():
-        st.session_state.setup[k] = int(v)
+    with st.spinner(f"Running {mode}..."):
+        result = run_optimizer(selected_mode, track_conditions, weights=weights if selected_mode == "bayesian" else None)
+
+    if selected_mode == "bayesian":
+        best_params, predicted_lap = result
+        st.success(f"Optimized Lap Time: {predicted_lap:.3f}s")
+        for k, v in best_params.items():
+            st.session_state.setup[k] = int(v)
+    else:
+        st.session_state.pareto_front = result
+        st.success(f"{len(result)} results found for {mode}!")
+        st.dataframe(result)
+
     st.rerun()
+
 
 if c2.button("Save to Slot A", use_container_width=True):
     st.session_state.setup_A = st.session_state.setup.copy()

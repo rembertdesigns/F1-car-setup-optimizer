@@ -8,3 +8,6 @@ lightgbm
 deap
 scikit-optimize
 joblib
+pymoo>=0.6.0
+scikit-optimize>=0.9.0
+scikit-learn>=1.0
