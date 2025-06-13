@@ -42,6 +42,26 @@ except Exception as e:
     maintenance_features = []
     print(f"Warning: Maintenance model not loaded: {e}")
 
+# ✅ Setup Logger Utility
+from datetime import datetime
+
+def log_generated_setup(setup, lap_time, source="RL Agent", log_file="data/setup_log.csv"):
+    import csv
+    os.makedirs("data", exist_ok=True)
+    fieldnames = ["timestamp", "source", "lap_time"] + list(setup.keys())
+    log_exists = os.path.exists(log_file)
+
+    with open(log_file, mode="a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if not log_exists:
+            writer.writeheader()
+        writer.writerow({
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": source,
+            "lap_time": lap_time,
+            **setup
+        })
+
 st.set_page_config(page_title="F1 Car Setup Optimizer", layout="wide")
 
 # --- 🏎️ Title & Intro ---
@@ -877,6 +897,41 @@ with st.expander("🧠 SHAP Explainability", expanded=False):
 
     if st.button("Show SHAP Insights", key="btn_shap_insights"):
         explain_current_setup(st.session_state.setup)
+
+# --- 📘 Setup Log Viewer ---
+st.divider()
+st.subheader("📘 RL & Manual Setup Log")
+
+log_path = "data/setup_log.csv"
+if os.path.exists(log_path):
+    df_log = pd.read_csv(log_path)
+    st.dataframe(df_log.sort_values("timestamp", ascending=False).reset_index(drop=True))
+
+    # --- 📥 CSV Download ---
+    csv = df_log.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Setup Log as CSV",
+        data=csv,
+        file_name="setup_log.csv",
+        mime="text/csv"
+    )
+
+# --- 📊 RL vs Manual Lap Time Trends (Colored by Tire Type) ---
+if all(col in df_log.columns for col in ["timestamp", "lap_time", "tire_type", "source"]):
+    fig = px.line(
+        df_log.sort_values("timestamp"),
+        x="timestamp",
+        y="lap_time",
+        color="tire_type",  # Color by compound type: soft, medium, hard, etc.
+        line_dash="source",  # Dashed line for RL vs solid for Manual
+        markers=True,
+        title="Lap Time Trends by Tire Compound"
+    )
+    fig.update_layout(height=320, legend_title_text="Tire Type")
+    st.plotly_chart(fig, use_container_width=True)
+
+else:
+    st.info("No logged setups yet. Use the RL agent or optimizer to generate and log a setup.")
 
 # --- Return to Top Button ---
 st.markdown("""
