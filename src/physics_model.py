@@ -130,7 +130,12 @@ if __name__ == "__main__":
         "suspension_stiffness": 5,
         "brake_bias": 54
     }
-    lap_time, forces = simulate_lap(setup, ambient_temp=track_conditions["track_temperature"], fuel_start=initial_fuel, weather=weather)
+    test_conditions = {
+        "track_temperature": 30.0
+    }
+    test_fuel = 100
+    test_weather = "Dry"
+    lap_time, forces = simulate_lap(test_setup, ambient_temp=test_conditions["track_temperature"], fuel_start=test_fuel, weather=test_weather)
     print(f"Lap Time: {lap_time:.2f} sec")
     for f in forces:
         print(f)
