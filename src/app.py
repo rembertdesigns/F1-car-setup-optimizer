@@ -25,6 +25,16 @@ except Exception as e:
     anomaly_features = []
     print(f"Warning: Anomaly detection model not loaded: {e}")
 
+# Load Predictive Maintenance model
+try:
+    maintenance_model = joblib.load("models/maintenance_risk_predictor.pkl")
+    with open("models/maintenance_features.json", "r") as f:
+        maintenance_features = json.load(f)
+except Exception as e:
+    maintenance_model = None
+    maintenance_features = []
+    print(f"Warning: Maintenance model not loaded: {e}")
+
 st.set_page_config(page_title="F1 Car Setup Optimizer", layout="wide")
 
 # --- 🏎️ Title & Intro ---
@@ -286,6 +296,29 @@ def check_for_anomaly(setup_dict, track_conditions, fuel_weight=100, traffic=0.5
     except Exception as e:
         print(f"Anomaly check failed: {e}")
         return False, None
+    
+# --- Predictive Maintenance Helper ---
+def predict_maintenance_risk(setup_dict, track_conditions):
+    if maintenance_model is None:
+        return None
+    try:
+        input_data = {
+            "front_wing_angle": setup_dict["front_wing_angle"],
+            "rear_wing_angle": setup_dict["rear_wing_angle"],
+            "ride_height": setup_dict["ride_height"],
+            "suspension_stiffness": setup_dict["suspension_stiffness"],
+            "brake_bias": setup_dict["brake_bias"],
+            "track_temperature": track_conditions["track_temperature"],
+            "grip_level": track_conditions["grip_level"]
+        }
+        df_input = pd.DataFrame([input_data])[maintenance_features]
+
+        # ✅ Access the first (and only) prediction
+        prediction = maintenance_model.predict(df_input)
+        return float(prediction[0])  # Ensure it's a float for Streamlit metric
+    except Exception as e:
+        print(f"Maintenance prediction failed: {e}")
+        return None
 
 # --- 📊 Live Analysis ---
 st.divider()
@@ -327,6 +360,14 @@ distance, speed = generate_telemetry_trace(st.session_state.setup)
 fig_telemetry = go.Figure(data=go.Scatter(x=distance, y=speed, mode='lines', name='Speed', line=dict(color='#FF8700', width=4)))
 fig_telemetry.update_layout(title="Simulated Speed Trace", xaxis_title="Distance (m)", yaxis_title="Speed (km/h)", height=250)
 st.plotly_chart(fig_telemetry, use_container_width=True)
+
+# --- 🔧 Predictive Maintenance Risk ---
+maintenance_risk = predict_maintenance_risk(st.session_state.setup, track_conditions)
+if maintenance_risk is not None:
+    st.subheader("🔧 Predicted Maintenance Risk")
+    st.metric("Component Wear Risk", f"{maintenance_risk:.1f}%")
+    if maintenance_risk > 60:
+        st.warning("⚠️ High risk of component wear detected. Consider adjusting setup.")
 
 from physics_model import simulate_lap
 
