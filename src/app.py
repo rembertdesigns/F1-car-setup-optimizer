@@ -9,9 +9,11 @@ import json
 import shap
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
-from optimizer import run_optimizer
+from optimizer import optimize_setup, run_pareto_optimization
 from sklearn.ensemble import RandomForestRegressor
 from physics_model import compute_downforce, compute_drag, compute_brake_distance, simulate_straight, simulate_corner, get_car_params, track
+from physics_model import simulate_lap
+
 
 st.set_page_config(page_title="F1 Car Setup Optimizer", layout="wide")
 
@@ -159,6 +161,10 @@ track_conditions = {
     "tire_compound": st.selectbox("Target Tire Compound", ["soft", "medium", "hard"], index=0)
 }
 
+# --- 🌦️ Weather & Fuel Inputs ---
+weather = st.selectbox("Weather Conditions", ["Dry", "Light Rain", "Heavy Rain"], index=0)
+initial_fuel = st.slider("Initial Fuel Load (kg)", 80, 110, 100, step=1)
+
 # --- 🔀 Optimizer Mode Selector ---
 st.divider()
 st.subheader("🔁 Choose Optimization Mode")
@@ -282,6 +288,25 @@ distance, speed = generate_telemetry_trace(st.session_state.setup)
 fig_telemetry = go.Figure(data=go.Scatter(x=distance, y=speed, mode='lines', name='Speed', line=dict(color='#FF8700', width=4)))
 fig_telemetry.update_layout(title="Simulated Speed Trace", xaxis_title="Distance (m)", yaxis_title="Speed (km/h)", height=250)
 st.plotly_chart(fig_telemetry, use_container_width=True)
+
+from physics_model import simulate_lap
+
+# Simulate lap with enhanced physics
+lap_time, forces = simulate_lap(
+    st.session_state.setup,
+    ambient_temp=track_conditions["track_temperature"],
+    fuel_start=initial_fuel,
+    weather=weather
+)
+
+with st.expander("🌡️ Tire Temperature Over Lap", expanded=False):
+    temps = [f["tire_temp"] for f in forces if "tire_temp" in f]
+    segments = list(range(1, len(temps) + 1))
+    fig_temp = go.Figure()
+    fig_temp.add_trace(go.Scatter(x=segments, y=temps, mode="lines+markers", name="Tire Temp (°C)"))
+    fig_temp.update_layout(title="Tire Temperature Evolution", xaxis_title="Segment", yaxis_title="Temp (°C)")
+    st.plotly_chart(fig_temp, use_container_width=True)
+
 
 # --- NEW: Physics Explorer Section ---
 st.divider()
