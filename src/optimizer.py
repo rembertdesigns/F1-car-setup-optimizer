@@ -10,17 +10,15 @@ from pymoo.core.problem import ElementwiseProblem
 from pymoo.optimize import minimize as nsga_minimize
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.termination import get_termination
+import json
 
 # --- Load Trained ML Model ---
 try:
-    model = joblib.load("models/lap_time_predictor.pkl")
-    MODEL_FEATURES = [
-        'front_wing_angle', 'rear_wing_angle', 'ride_height',
-        'suspension_stiffness', 'brake_bias',
-        'track_temperature', 'grip_level'
-    ]
+    model = joblib.load("models/lap_time_predictor_v2.pkl")
+    with open("models/model_features.json") as f:
+        MODEL_FEATURES = json.load(f)
 except FileNotFoundError:
-    print("Optimizer Error: models/lap_time_predictor.pkl not found.")
+    print("Optimizer Error: models/lap_time_predictor_v2.pkl not found.")
     model = None
 
 # --- Define Search Space ---
@@ -112,7 +110,7 @@ def active_select_next(gp_ensemble, pool_X, top_k=5):
     preds = np.array([est.predict(pool_X) for est in gp_ensemble.estimators_])
     std = np.std(preds, axis=0)
     top_indices = np.argsort(std)[-top_k:]
-    return pool_X[top_indices]
+    return pool_X.iloc[top_indices]
 
 # --- Pareto Scan Using Original Optimizer ---
 def run_pareto_optimization(track_conditions, n_steps=15):
