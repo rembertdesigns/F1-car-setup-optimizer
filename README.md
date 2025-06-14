@@ -105,10 +105,10 @@ streamlit run src/app.py
 ```
 If models are missing, run:
 ```bash
-python src/train_model.py               # For lap time predictor
-python src/train_anomaly_model.py       # For anomaly detection
-python src/train_maintenance_model.py   # For predictive maintenance
-python src/train_rl_agent.py            # For PPO setup agent
+python3 src/train_model.py               # For lap time predictor
+python3 src/train_anomaly_model.py       # For anomaly detection
+python3 src/train_maintenance_model.py   # For predictive maintenance
+python3 src/train_rl_agent.py            # For PPO setup agent
 ```
 
 ---
