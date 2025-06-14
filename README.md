@@ -1,63 +1,83 @@
 # 🏎️ F1 Car Setup Optimizer
 
-An interactive web application that acts as an F1 engineering "workbench," using Bayesian Optimization to find the optimal car setup for specific tracks and performance goals. This tool allows users to explore trade-offs between lap time, tire preservation, and handling in a dynamic, visual interface.
+An interactive web application that acts as an F1 engineering "workbench," using Bayesian Optimization, multi-objective tradeoffs, and reinforcement learning to find optimal car setups. Built with a full ML pipeline and sleek Streamlit UI.
 
 ---
 
 ## ✨ Key Features
 
-* **Interactive Setup Workbench:**
-    * A modern UI built with Streamlit where users can adjust core car setup parameters (wing angles, ride height, suspension, brake bias) using interactive sliders.
-    * A live-updating **Radar Chart** provides immediate visual feedback on the car's performance balance (Top Speed, Cornering Grip, Stability, Tire Life).
-    * A **Simulated Telemetry Trace** visualizes the car's speed profile over a generic lap, instantly updating as sliders are moved.
+### 🛠️ Setup Workbench
+- Adjust parameters: Front/Rear Wing, Ride Height, Suspension, Brake Bias
+- Radar chart visualizes balance: Top Speed, Cornering, Stability, Tire Life
+- Simulated telemetry chart (Speed, Brake, Throttle over distance)
 
-* **AI-Powered Optimization:**
-    * **Bayesian Optimization:** Utilizes `scikit-optimize` to intelligently search the vast parameter space for the best setup, avoiding inefficient brute-force methods.
-    * **Multi-Objective Tradeoffs:**
-        * **Weighted Optimization:** Find a single optimal setup based on user-defined weights for lap time, tire preservation, and handling balance.
-        * **Pareto Front Analysis:** Run a more advanced optimization to discover the entire frontier of optimal trade-offs between lap time and tire preservation, visualized on an interactive scatter plot.
+### 🤖 AI Optimization Modes
+- **Bayesian Optimization** with `scikit-optimize`
+- **Pareto Front Discovery** (multi-objective with `NSGA-II`)
+- **Reinforcement Learning Agent** (trained PPO models using `stable-baselines3`)
+- Setup suggestions adapt to track and starting grid position
 
-* **Analysis and Workflow Tools:**
-    * **Track-Specific Context:** Choose from a list of F1 circuits, each with a visual layout and unique `base_lap_time` that influences the optimization.
-    * **Setup Comparison:** Save two different setups to "Slot A" and "Slot B" for a direct side-by-side comparison of their stats, balance profiles, and telemetry traces.
-    * **Preset Archetypes:** Quickly load common setup types like "Max Downforce" or "Low Drag" to use as a starting point.
-    * **Export & Share:**
-        * Download the current setup as a clean JSON or printable PDF report.
-        * Generate a shareable URL that loads the application with the specific setup parameters pre-filled.
+### 🧠 Explainability & Diagnostics
+- SHAP-based analysis of feature impact on lap time
+- Anomaly detection for unsafe or extreme setup combinations
+- Predictive maintenance model estimates mechanical risk
 
----
-
-## 🛠️ Technologies Used
-
-* **Core:** Python 3.10+
-* **Optimization & Machine Learning:** `scikit-optimize` (for Bayesian Optimization), `scikit-learn` & `joblib` (for the underlying lap time prediction model).
-* **Data Handling:** NumPy, Pandas
-* **User Interface & Visualization:** Streamlit, Plotly
-* **PDF Generation:** `fpdf2`
+### 🔬 Simulation + Analysis Tools
+- Save and compare setups in Slot A vs Slot B
+- Track-specific base lap time, strategy tips, and performance summary
+- Export options: JSON, CSV, text summary
+- Optimization history with evolution charts
 
 ---
 
-## 🧱 Project Structure
+## 🛠️ Tech Stack
+
+| Component                | Tech Used                                |
+|-------------------------|-------------------------------------------|
+| UI                      | Streamlit + Plotly                        |
+| ML & Optimization       | scikit-learn, scikit-optimize, pymoo, shap |
+| RL Agent                | Stable Baselines3 (PPO)                   |
+| Data Processing         | NumPy, Pandas                             |
+| Report Generation       | `fpdf2`, JSON, CSV                        |
+
+---
+
+## 🧱 Folder Structure
 
 ```bash
 F1-car-setup-optimizer/
 │
 ├── data/
-│   └── historic_setups.csv    # Example data for recommender
+│   ├── synthetic_car_setup_v2.csv
+│   └── setup_log.csv             # Optional: user-generated logs
+│
+├── logs/                         # Training logs
 │
 ├── models/
-│   └── lap_time_predictor.pkl   # Pre-trained ML model that predicts lap time
+│   ├── rl/
+│   │   ├── ppo_car_setup_agent_10000_steps.zip
+│   │   ├── ...
+│   │   └── ppo_car_setup_final.zip
+│   ├── lap_time_predictor_v2.pkl
+│   ├── setup_anomaly_detector.pkl
+│   ├── maintenance_risk_predictor.pkl
+│   ├── *.json (feature configs for each model)
 │
 ├── src/
-│   ├── app.py                   # The main Streamlit application script
-│   └── optimizer.py             # Contains the Bayesian optimization logic
+│   ├── app.py                   # Streamlit frontend
+│   ├── optimizer.py             # Optimizers: Bayesian, Pareto, NSGA-II
+│   ├── physics_model.py         # Physics-based lap simulation
+│   ├── setup_env.py             # Gym-compatible environment for RL
+│   ├── simulate_physics_model.py
+│   ├── preprocess_data.py       # Generates synthetic training data
+│   ├── train_model.py           # Lap time regressor training
+│   ├── train_rl_agent.py        # PPO RL agent training
+│   ├── train_anomaly_model.py
+│   └── train_maintenance_model.py
 │
-├── notebooks/
-│   └── EDA.ipynb              # Exploratory Data Analysis notebook
-│
-├── train_model.py             # Script to train the ML model
-├── requirements.txt           # Python package dependencies
-└── README.md                  # This file
+├── requirements.txt
+├── LICENSE
+└── README.md
 ```
 
 ---
