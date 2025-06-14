@@ -1,5 +1,7 @@
 # 🏎️ F1 Car Setup Optimizer
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://f1-car-setup-optimizer.streamlit.app)
+
 An interactive web application that acts as an F1 engineering "workbench," using Bayesian Optimization, multi-objective tradeoffs, and reinforcement learning to find optimal car setups. Built with a full ML pipeline and sleek Streamlit UI.
 
 ---
