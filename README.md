@@ -175,6 +175,8 @@ F1-car-setup-optimizer/
 └── README.md                             # This documentation
 ```
 
+---
+
 ## 🎮 How to Use
 
 ### 1. Track Selection
@@ -209,6 +211,79 @@ F1-car-setup-optimizer/
 - **Pareto Front Visualization:** See optimal tradeoff curves
 - **Setup Evolution:** Track optimization history over time
 
-🔧 Troubleshooting
-Common Issues
-"Model not found" errors:
+---
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**"Model not found" errors:**
+```bash
+# Make sure you've run all training scripts:
+python src/simulate_physics_model.py  # Generate data first
+python src/train_model.py             # Train main model
+python src/train_anomaly_model.py     # Train anomaly detector
+python src/train_maintenance_model.py # Train maintenance model
+```
+**RL optimization not working:**
+```bash
+# Train the RL agent:
+python src/train_rl_agent.py
+# This creates models/rl/ppo_car_setup_final.zip
+```
+**Import errors:**
+```bash
+# Ensure you're in the virtual environment and have installed requirements:
+pip install -r requirements.txt
+```
+**Performance issues:**
+
+- RL training is CPU-intensive; expect 10-15 minutes on average hardware
+- The app loads faster after initial model training is complete
+- Use lighter optimization modes (Bayesian) for faster response
+
+---
+
+## 🛣️ Roadmap & Future Enhancements
+
+### Immediate Improvements
+- Real telemetry integration using **FastF1 API** for actual F1 data  
+- Enhanced physics simulation with tire degradation models  
+- Weather impact modeling for dynamic condition changes  
+- Setup templates for different driving styles  
+
+### Advanced Features
+- Full race weekend simulation (**Practice → Qualifying → Race**)  
+- Driver feedback integration for setup preference learning  
+- Team strategy optimization considering pit stop windows  
+- 3D visualization of aerodynamic flow and setup impact  
+
+### Technical Enhancements
+- Model ensemble methods for improved prediction accuracy  
+- Active learning for continuous model improvement  
+- Cloud deployment options for team collaboration  
+- API endpoints for integration with external tools  
+
+---
+
+## 📄 License
+This project is licensed under the **MIT License** – see the [LICENSE](LICENSE) file for details.
+
+## 🤝 Contributing
+Contributions are welcome! Areas where help is particularly valuable:
+
+- Physics model refinement (aerodynamics, tire models)  
+- Additional optimization algorithms (genetic algorithms, simulated annealing)  
+- Real F1 data integration and validation  
+- Performance optimization and code refactoring  
+- Documentation and tutorial creation  
+
+## 🙏 Acknowledgments
+- **Formula 1** for inspiration and the fascinating technical challenge  
+- **Streamlit** team for the excellent web app framework  
+- **scikit-optimize** and **pymoo** for optimization algorithms  
+- **Stable Baselines3** for reinforcement learning capabilities  
+- **F1 engineering community** for insights into car setup principles  
+
+
+
