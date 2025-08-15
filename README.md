@@ -63,3 +63,39 @@ The platform implements three distinct optimization strategies:
 | **Data Processing** | NumPy, Pandas for numerical computation and data handling |
 | **Explainability** | SHAP for model interpretability |
 | **Export & Reporting** | JSON, CSV, PDF report generation |
+
+## 🚀 Quick Start Guide
+
+### Prerequisites
+- Python 3.10+ (Required for Stable Baselines3 compatibility)
+- pip package manager
+- Git for cloning the repository
+
+### Installation Steps
+
+**1. Clone the repository**
+```bash
+git clone https://github.com/rembertdesigns/F1-car-setup-optimizer.git
+cd F1-car-setup-optimizer
+```
+**2. Set up Python virtual environment**
+```bash
+python -m venv venv
+
+# On Windows:
+venv\Scripts\activate
+
+# On macOS/Linux:
+source venv/bin/activate
+```
+**3. Install dependencies**
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+**4. Create necessary directories**
+```bash
+mkdir -p data models/rl logs
+```
+
+
