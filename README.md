@@ -98,4 +98,79 @@ pip install -r requirements.txt
 mkdir -p data models/rl logs
 ```
 
+## Initial Setup & Training
 
+⚠️ **IMPORTANT**: The app requires trained models to function properly. Run these training scripts in order:
+
+**1. Generate synthetic training data**
+```bash
+python src/simulate_physics_model.py
+```
+**2. Train core prediction models**
+```bash
+# Main lap time predictor (REQUIRED)
+python src/train_model.py
+
+# Anomaly detection model
+python src/train_anomaly_model.py
+
+# Maintenance risk predictor
+python src/train_maintenance_model.py
+```
+**3. Train reinforcement learning agent (Optional but recommended)**
+```bash
+python src/train_rl_agent.py
+```
+Note: RL training takes 10-15 minutes depending on your hardware
+
+**4. Launch the application**
+```bash
+streamlit run src/app.py
+```
+
+## Verification
+
+The app should open in your browser at [http://localhost:8501](http://localhost:8501). You should see:
+
+✅ No "Model not found" errors  
+✅ All optimization modes working (Bayesian, NSGA-II, RL)  
+✅ Performance predictions updating when you adjust parameters
+
+---
+
+## 📁 Project Structure
+```
+F1-car-setup-optimizer/
+│
+├── 📂 data/                              # Training data and logs
+│   ├── synthetic_car_setup_v2.csv        # Generated training dataset
+│   └── setup_log.csv                     # User-generated setup logs
+│
+├── 📂 logs/                              # Training logs and tensorboard data
+│   └── rl/                               # RL training logs
+│
+├── 📂 models/                            # Trained ML models
+│   ├── 📂 rl/                            # Reinforcement learning models
+│   │   ├── ppo_car_setup_agent_*.zip     # Training checkpoints
+│   │   └── ppo_car_setup_final.zip       # Final trained RL agent
+│   ├── lap_time_predictor_v2.pkl         # Main prediction model
+│   ├── setup_anomaly_detector.pkl        # Anomaly detection
+│   ├── maintenance_risk_predictor.pkl    # Predictive maintenance
+│   └── *.json                            # Feature configurations
+│
+├── 📂 src/                               # Source code
+│   ├── 📂 envs/                          # RL environment
+│   │   └── setup_env.py                  # Custom Gymnasium environment
+│   ├── app.py                            # Main Streamlit application
+│   ├── optimizer.py                      # Optimization algorithms
+│   ├── physics_model.py                  # Physics simulation engine
+│   ├── simulate_physics_model.py         # Data generation
+│   ├── train_model.py                    # ML model training
+│   ├── train_rl_agent.py                 # RL agent training
+│   ├── train_anomaly_model.py            # Anomaly detection training
+│   └── train_maintenance_model.py        # Maintenance model training
+│
+├── requirements.txt                      # Python dependencies
+├── LICENSE                               # MIT License
+└── README.md                             # This documentation
+```
