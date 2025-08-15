@@ -52,3 +52,14 @@ The platform implements three distinct optimization strategies:
 ---
 
 ## 🛠️ Technical Architecture
+
+| Component | Technology Stack |
+|-----------|------------------|
+| **Frontend** | Streamlit + Plotly for interactive visualizations |
+| **Machine Learning** | scikit-learn, scikit-optimize, RandomForest, Isolation Forest |
+| **Multi-Objective Optimization** | pymoo (NSGA-II algorithm) |
+| **Reinforcement Learning** | Stable Baselines3 (PPO), Custom Gymnasium environment |
+| **Physics Simulation** | Custom physics engine with aerodynamics and tire models |
+| **Data Processing** | NumPy, Pandas for numerical computation and data handling |
+| **Explainability** | SHAP for model interpretability |
+| **Export & Reporting** | JSON, CSV, PDF report generation |
