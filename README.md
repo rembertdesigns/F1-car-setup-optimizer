@@ -174,3 +174,41 @@ F1-car-setup-optimizer/
 ├── LICENSE                               # MIT License
 └── README.md                             # This documentation
 ```
+
+## 🎮 How to Use
+
+### 1. Track Selection
+
+- Choose from 20+ real F1 circuits in the sidebar
+- Each track has unique characteristics and optimal strategies
+- Set environmental conditions (temperature, weather, fuel load)
+
+### 2. Manual Setup Tuning
+
+- Adjust aerodynamic parameters (front/rear wing angles)
+- Configure suspension settings (ride height, stiffness)
+- Set brake bias for optimal braking balance
+- Observe real-time performance radar chart updates
+
+### 3. AI Optimization
+
+- **Single Objective:** Focus purely on lap time optimization
+- **Multi-Objective:** Explore lap time vs tire wear tradeoffs
+- **Reinforcement Learning:** Let the AI agent suggest track-specific setups
+
+### 4. Analysis & Comparison
+
+- Save setups to Slots A & B for side-by-side comparison
+- View detailed telemetry simulations
+- Export comprehensive reports for further analysis
+
+### 5. Advanced Features
+
+- **SHAP Analysis:** Understand which parameters impact performance most
+- **Anomaly Detection:** Get warnings about unsafe setup combinations
+- **Pareto Front Visualization:** See optimal tradeoff curves
+- **Setup Evolution:** Track optimization history over time
+
+🔧 Troubleshooting
+Common Issues
+"Model not found" errors:
